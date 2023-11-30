@@ -1,0 +1,192 @@
+---
+title: "GIS Project"
+author: "Kaitlin Rommelfanger"
+date: "2023-11-30"
+output: html_document
+---
+
+# NMDS
+This first section is the nMDS looking at fish communities at the family level, we split the seagrass into three categories, the first is all transects deeper than 15 meters, this was determined to be the depth that native seagrasses stop growing
+
+We split the seagrass shallower than 15m into two categories 1, where all seagrass present was halophila (<15m,100% halophila), and one where there was native seagrasses present (<15m, native present)
+
+### Three seagrass categories transects were split into
+1. >15m
+2. <15m, 100% Halophila
+3. <15m, native present
+
+We ran an nMDS, Permanova, and Simper to tease apart what families are most influencing differences in fish communites in these different seagrass categories
+```{nMDS}
+#libraries
+library(tidyverse)
+library(vegan)#run nMDS
+library(colorBlindness)#to check plots are color blind friendly
+
+#csv's required
+pcov<-read.csv("Data/WeFixedItAnalyzeMe.csv")#seagrass info
+AllMerged <- read.csv("AllMerged.csv")#fish families
+
+#Want to know, of the seagrass present, what percentage of that seagrass is halophila, Add new column for % halophila/total seagrass cover#
+pcov<-pcov %>% 
+  mutate(totalgrass= (pcov$PCovHalophila+
+                      pcov$PCovThalassia+
+                      pcov$PCovHalodule+
+                      pcov$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(pcov$PCovHalophila/totalgrass))
+
+##Nas were generated on three transects where there was no seagrass, because cannot divide by zero, Making the NAs 0
+pcov[is.na(pcov)] <- 0
+
+#rename the dataframe
+depth_hal<-pcov
+
+##Make the depth bin categories, we know that deeper than 15 meters there is no native seagrasses, and we want to separate the transects below 15 meters into two groups, ones that are 100% halophila, and ones that are not 100% halophila and contain native seagrasses ##
+depth_hal<- depth_hal%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ "deep",
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ "hal",
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ "native" ))
+
+
+##now we need to link the fish families with the seagrass information
+
+#make family a factor
+AllMerged$Family<-as.factor(AllMerged$Family)
+
+#determine the total number of fish of each family that are on each transect to make dataframe for nMDS, which needs to be wide
+dhnMDSframe<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Family)%>%
+  pivot_wider(names_from = Family , values_from = n)
+ 
+
+##Turning NAs to 0s where there are no fish from that family on the transect
+dhnMDSframe[is.na(dhnMDSframe)] <- 0
+
+##Merging the two dataframes to make one tabular by transect, that includes the seagrass categories
+dhnMDSframe = merge(dhnMDSframe, depth_hal, by = "Transect")
+
+
+#Select for only the columns that contain the families so we can run the nMDS, want no grouping variables here
+  HnMDSframe<-dhnMDSframe%>%
+    select(`Aulostomidae `:Haemulidae)
+
+#make a frame that has transect and our cat column in it to use for plotting purposes  
+plotframe<-dhnMDSframe%>%
+  select(`Aulostomidae `:Haemulidae, Transect,dhcat)
+
+
+###Question, i need to set the seed here so we get the same nMDS for all the times we run it
+
+#now run the nMDS 
+final_NMDS <- metaMDS(HnMDSframe, k = 2, trymax = 100) 
+final_NMDS
+#Stress:     0.2339253 
+
+#run the stress plot
+stressplot(final_NMDS)
+#non metric r squared 0.945
+#linear fit r2=0.72
+
+##pulling the species locations out of the NMDS (x and y)
+fam <- as.data.frame(final_NMDS$species)
+
+
+# this line is pulling the species names and linking them to thier location
+fam$sp <- rownames(final_NMDS$species)
+
+
+#this is pulling the points for each individual transect out of the nmds
+  transect <- as.data.frame(final_NMDS$points)
+
+#we are pulling the seagrass categories out of our plotframe that we made earlier so we can make the 95% confidence intervals for our categories depth/percent halophila
+  transect$dhcat <- plotframe[,21] 
+
+#need to keep this code because you cant pull the points in the next line unless if this ordiplot exists
+ordiplot(final_NMDS, type = "none") 
+
+#this is storing the info to make the 95% confidence intervals as an object from the ordiplot
+finallord<-ordiellipse(final_NMDS, transect$dhcat, conf = 0.95, label = TRUE)
+
+#hidden vegan function that calculates ellipses
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+#convert zone to a factor
+transect$dhcat <- factor(transect$dhcat)
+
+#create a dataframe of points that will draw the ellipses
+final_df_ell <- data.frame()
+
+for(g in levels(transect$dhcat)){
+  final_df_ell <- rbind(final_df_ell, cbind(as.data.frame(with(transect[transect$dhcat==g,],
+                                                   veganCovEllipse(finallord[[g]]$cov,finallord[[g]]$center,finallord[[g]]$scale)))
+                                ,zone=g))
+}
+
+#plot
+finalnMDSplot<-ggplot(transect) +
+  geom_point(aes(x = MDS1, y = MDS2, color = as.factor(dhcat)), size = 3) + geom_path(data = final_df_ell, aes(x = NMDS1, y = NMDS2, group = zone, color=zone), linewidth = 1, linetype = 1)+
+  theme_classic() +
+  labs(color = "dhcat", fill = "dhcat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fam, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Category", labels = c("> 15m", "100% Halophila < 15m","Native Present and < 15m"),values = c("#56B4E9","#F0E442","#CC79A7"))+scale_color_manual(name = "Category", labels = c("> 15m", "100% Halophila < 15m","Native Present and < 15m"), values = c("#56B4E9","#F0E442","#CC79A7"))+annotate(geom="text", x=1.5, y=1.2, label="stress=0.234")
+
+
+finalnMDSplot
+
+#check our colors for color blind friendly
+cvdPlot(finalnMDSplot)
+```
+
+```{r Permanova}
+
+#now run post hoc to determine significant differences between different seagrasses
+
+#rename dataframe
+final_dissim_bray<- HnMDSframe
+
+##Making the dissimilarity matrix##
+final_bray <- vegdist(final_dissim_bray, method = "bray")
+    final_bray
+
+#change dhcat to factor
+plotframe$dhcat<-as.factor(plotframe$dhcat)
+
+##running the PERMANOVA# (dissimilaritymatrix~independent variables)
+    dh_Strata <- adonis2(final_bray ~ plotframe$dhcat)
+    dh_Strata
+ 
+#there is a significant difference, so we run the simper to determine what is contributing to these differences 
+  
+###Question how to finalize the simper, some families are borderline significant, sometimes when you run it they are , and sometime they are not what is the protocol to make this
+    
+
+```
+
+```{r Simper}
+#Final simper
+       dh_simper <- simper(final_dissim_bray, permutations = 999, group = (plotframe$dhcat))
+  summary(dh_simper)
+  
+
+  
+#deep= greater than 15m
+#hal= Less than 15m and all seagrass present is Halophila
+#native= Less than 15m, not all seagrass is Halophila
+  
+
+#native_deep is significant, simper shows that shallow seagrass containing native species has significantly different Lutjanidae, Serranidae, Labrisomidae (? stef and aves got significant I did not) than deep
+  
+#native-hal is significant simper shows that seagrass with native is significantly different Labridae, Pomacentridae, Syngnathidae, Chaetodontidae, Holocentridae than shallow 100% halophila
+  
+  
+#deep_hal no significant families different in shallow and deep halophila
+
+```
+```
+

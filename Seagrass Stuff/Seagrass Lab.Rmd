@@ -1,0 +1,300 @@
+---
+title: "Seagrass lab"
+output: html_document
+date: "2022-11-05"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+
+
+```{r working directory}
+setwd("~/Desktop/Physical Ecological Processes /Seagrass Lab ")
+Seagrass <- read.csv("data/Seagrass Data.csv", header=TRUE)
+Conch <- read.csv("data/Conch Data.csv", header=TRUE)
+View(Conch)
+library(tidyr)
+#below code deleted the NAs from the bottom of the conch data (didnt need to do this after I reloaded the data)
+
+Conch<-Conch %>% drop_na()
+
+#then view the data
+View(Conch)
+View(Seagrass)
+
+#having issues so trying to melt the data
+library(reshape2)
+Sgmelt <- melt(Seagrass, id.vars = "Quadrat", variable.name = "Species", value.name = "PercentCover")
+View(Sgmelt)
+#deleted all the extra colums that got added when imported to r 
+
+Seagrass$X<-NULL
+
+
+#deleted these two rows from 2019 that no data was collected (we did not need to do this)
+Seagrass<- Seagrass[-c(880, 881), ]
+colnames(Seagrass)[11]<-c("PercentCover")
+
+#how to pivot table in r, turn on tidyverse 
+install.packages("tidyverse")
+library("tidyverse")
+
+#so before the arrow is the new name of the object you are calling, then to do pivot table in r you tell it the dataframe then do a pipe (which is %>%)
+
+#so this is a pivot table that shows the mean total percent cover per transect per year
+seagrassmeanstransect<-Seagrass %>% 
+  group_by(Year,Transect) %>% 
+  summarise(meanpercentseagrass=mean(PecentSeagrassCover))
+
+View(seagrassmeanstransect)
+
+# this is me testing if I could get it to tell me the mean percent cover of T testudium per year and transect and that worked
+
+TTmeanTYr<-Seagrass %>% 
+  group_by(Year,Transect) %>% 
+  summarise(meanTT=mean(T.testudinum))
+
+View(TTmeanTYr)
+
+#Then I tried to get it only by year and that worked!!!
+TTmeanYr<-Seagrass %>% 
+  group_by(Year) %>% 
+  summarise(meanTT=mean(T.testudinum))
+
+View(TTmeanYr)
+
+# then I tried doing two species and that worked!!
+TTHWmeanYr<-Seagrass %>% 
+  group_by(Year) %>% 
+  summarise(meanTT=mean(T.testudinum),meanHW=mean(H.wrightii))
+
+View(TTHWmeanYr)
+
+#then i did all the species, but SF did not work, but it didnt actually work, because I had the code in using the Seagrass$ method, it does not like that because i used pipe to already tell it the dataframe so once i deleted the $ it appeared to work
+
+SpmeanYr<-Seagrass %>% 
+  group_by(Year) %>% 
+  summarise(meanTT=mean(T.testudinum),meanHW=mean(H.wrightii), meanSF=mean(S.filiforme), meanHS=mean(Halophilastipulacae))
+
+View(SpmeanYr)
+
+# this is waht i was gonna use to caluclate SEM using the total cover (did not end up using this )
+
+seagrassmeanperyear<-Seagrass %>% 
+  groupby(Year,Transect) %>% 
+  summarise(meantotalcoralcover=mean(PercentCover),
+            n=n(),
+            sem=sd(PercentCover/sqrt(n))
+            
+
+            
+#Averycode she summarized all the data by year, by species
+
+library(plyr)
+SF.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(S.filiforme),
+                      sd = sd(S.filiforme),
+                      n = length(S.filiforme),
+                      SEM = sd(S.filiforme)/sqrt(length(S.filiforme)))
+SF.summary
+
+TT.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(T.testudinum),
+                      sd = sd(T.testudinum),
+                      n = length(T.testudinum),
+                      SEM = sd(T.testudinum)/sqrt(length(T.testudinum)))
+
+TT.summary
+
+HW.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(H.wrightii),
+                      sd = sd(H.wrightii),
+                      n = length(H.wrightii),
+                      SEM = sd(H.wrightii)/sqrt(length(H.wrightii)))
+
+HW.summary
+
+HS.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(Halophilastipulacae),
+                      sd = sd(Halophilastipulacae),
+                      n = length(Halophilastipulacae),
+                      SEM = sd(Halophilastipulacae)/sqrt(length(Halophilastipulacae)))
+
+HS.summary
+
+Totalcover.summary<- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(PecentSeagrassCover),
+                      sd = sd(PecentSeagrassCover),
+                      n = length(PecentSeagrassCover),
+                      SEM = sd(PecentSeagrassCover)/sqrt(length(PecentSeagrassCover)))
+Totalcover.summary
+
+# then we are creating a vector for each of the means from the summaries so we can combine them into a dataframe 
+
+S.filiforme<-c(SF.summary$mean)
+S.filiforme
+
+T.testudinium<-c(TT.summary$mean)
+T.testudinium
+
+H.stipulacae<-c(HS.summary$mean)
+H.stipulacae
+
+H.wrighti<-c(HW.summary$mean)
+H.wrighti
+
+year<-(2009:2022)
+year
+
+
+#then we want to combine the vectors into a single dataframe
+
+sgmean<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae)
+View(sgmean)
+
+#now we gotta graph this.. 
+
+#to graph it we need to melt it, we want it to look like Y, S, M as top of columns, so to do that we melted it, (this works both using the matrix we made from the summaries and the data from the pivot table)
+
+library(reshape2)
+SGmelt = melt(sgmean, id.vars = c("year"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae"))
+
+View(SGmelt)
+
+#renamed the colum name in the melted document to species
+colnames(SGmelt)[2]<-c("Species")
+
+#then we put it into ggplot, this current code does not have the error bars
+library(ggplot2)
+
+species_plot <- ggplot(SGmelt, aes(fill=Species, y=value, x=year)) +
+    geom_bar(position="stack", stat="identity") +ylab("Percent Seagrass Cover by Species (+/-SEM") + xlab("Year")
+
+species_plot
+
+
+
+#trying to add error bars to the plot
+
+#created a vector, with the standard errors of them mean pulled from the total cover summary that we made(because tyler said that we want the error bars just from there)
+Totalcover.summary
+
+SEM<-c(Totalcover.summary$SEM)
+
+#then I added the SEM to the matrix we created earlier
+
+sgmeanSEM<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae, SEM)
+View(sgmeanSEM)
+
+#then we melted it so that SEM was repeated per year, to try and get the error bars into the graph then we quit for the day
+
+library(reshape2)
+SGmeltSEM = melt(sgmeanSEM, id.vars = c("year", "SEM"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae"))
+
+View(SGmeltSEM)
+
+```
+
+
+
+```{r Lets Try Again}
+setwd("~/Desktop/Physical Ecological Processes /Seagrass Lab ")
+Seagrass <- read.csv("data/Seagrass Data.csv", header=TRUE)
+Conch <- read.csv("data/Conch Data.csv", header=TRUE)
+View(Conch)
+View(Seagrass)
+
+#Summarize all the species, to get the means from each species
+library(plyr)
+SF.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(S.filiforme),
+                      sd = sd(S.filiforme),
+                      n = length(S.filiforme),
+                      SEM = sd(S.filiforme)/sqrt(length(S.filiforme)))
+SF.summary
+
+TT.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(T.testudinum),
+                      sd = sd(T.testudinum),
+                      n = length(T.testudinum),
+                      SEM = sd(T.testudinum)/sqrt(length(T.testudinum)))
+
+TT.summary
+
+HW.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(H.wrightii),
+                      sd = sd(H.wrightii),
+                      n = length(H.wrightii),
+                      SEM = sd(H.wrightii)/sqrt(length(H.wrightii)))
+
+HW.summary
+
+HS.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(Halophilastipulacae),
+                      sd = sd(Halophilastipulacae),
+                      n = length(Halophilastipulacae),
+                      SEM = sd(Halophilastipulacae)/sqrt(length(Halophilastipulacae)))
+
+HS.summary
+
+Totalcover.summary<- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(PecentSeagrassCover),
+                      sd = sd(PecentSeagrassCover),
+                      n = length(PecentSeagrassCover),
+                      SEM = sd(PecentSeagrassCover)/sqrt(length(PecentSeagrassCover)))
+Totalcover.summary
+
+#make Vectors, S. filiforme is fucked up so we had to enter those averages manually
+
+S.filiforme<-c(27.3, 2.214285714, 0.715384615, 3.777777778, 6.606666667, 8.416666667, 6.764705882, 1.76, 0.04494382, 0.433333333, 0.352272727, 0.155555556, 2.5, 1.058823529)
+S.filiforme
+
+T.testudinium<-c(TT.summary$mean)
+T.testudinium
+
+H.stipulacae<-c(HS.summary$mean)
+H.stipulacae
+
+H.wrighti<-c(HW.summary$mean)
+H.wrighti
+
+year<-(2009:2022)
+year
+
+#then we want to combine the vectors into a single dataframe
+
+sgmean<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae)
+View(sgmean)
+
+#then we melted it (when i melt the data here, 2015 disappears wtf!!!!!!)
+
+library(reshape2)
+SGmelt = melt(sgmean, id.vars = c("year"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae"))
+
+View(SGmelt)
+
+#renamed the colum name in the melted document to species
+colnames(SGmelt)[2]<-c("Species")
+
+#then we put it into ggplot, this current code does not have the error bars
+library(ggplot2)
+
+species_plot <- ggplot(SGmelt, aes(fill=Species, y=value, x=year)) +
+    geom_bar(position="stack", stat="identity") +ylab("Percent Seagrass Cover by Species (+/-SEM") + xlab("Year")
+
+species_plot
+
+
+#NOW we are creating a 95% confidence interval for the mean from 2010
+
+meanpercentcover<-mean(Seagrass$PecentSeagrassCover)
+meanpercentcover
+
+```
+
+

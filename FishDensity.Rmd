@@ -1,0 +1,1223 @@
+---
+title: "Fish Density"
+author: "Kaitlin Rommelfanger"
+date: "2023-09-24"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+3) Seagrass NMDS
+  Permanova
+  Simper
+4) Fish Density
+5) T test on fish density
+6) Clean up Plots
+  Add Stress
+  Change up Colors for Depth and % Halophila
+7) plot top seven species listed by depth, and run a t test at the two separate depths.  
+  
+  
+  
+```{r Fish Density}
+library(tidyverse)
+#we have the number of fish per transect in we fixed it analyze me, we need to calculate density
+fish<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+View(fish)
+
+#our transects were 100m2 so we divided the total number of fish by 100, to get fish density per transect
+fish<-fish%>%mutate("density"=(N/100))
+
+#now we need to add a dcat column, dividing depth into <15 and >15 m
+
+fish$dcat<-case_when(fish$depth<15 ~ "1", fish$depth>15 ~"2")
+
+# now I gotta remember how to run a t test...
+
+t.test(density~dcat, data=fish)
+
+#	Welch Two Sample t-test
+
+#data:  density by dcat
+#t = -1.4718, df = 52.253, p-value = 0.1471
+#alternative hypothesis: true difference in means between group 1 and group 2 is not equal to 0
+#95 percent confidence interval:
+# -0.18131652  0.02787114
+#sample estimates:
+#mean in group 1 mean in group 2 
+#      0.1997059       0.2764286 
+
+
+
+#now looking at fish density across different percentages of halophila
+grass<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+grass<-grass%>%mutate(totalgrass=(PCovHalophila+PCovThalassia+PCovSyringodium+PCovHalodule))%>%
+  mutate(PerHalTotal=(PCovHalophila/totalgrass))
+
+#turn nas from dividing by 0 to zeros 
+grass[is.na(grass)]<-0
+
+#make two categories for when halophila is the only seagrass and when there are other seagrasses present 
+grass$halcat <- case_when(
+  grass$PerHalTotal<1 ~ "1",
+  grass$PerHalTotal==1 ~ "2")
+
+#make density column
+grass<-grass%>%mutate("density"=(N/100))
+
+#now we run our t test 
+t.test(density~halcat, data=grass)
+
+#	Welch Two Sample t-test
+
+#data:  density by halcat
+#t = -2.5139, df = 57.795, p-value = 0.01475
+#alternative hypothesis: true difference in means between group 1 and group 2 is not equal to 0
+#95 percent confidence interval:
+# -0.20114487 -0.02280751
+#sample estimates:
+#mean in group 1 mean in group 2 
+ #     0.1585000       0.2704762 
+
+```
+
+```{r Stefs Code, slightly tweaked}
+##load libraries##
+library(vegan)
+library(DHARMa)
+library(tidyverse)
+library(dplyr)
+
+pcov<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#Add new column for % halophila/ % total seagrass cover#
+pcov<-pcov %>% 
+  mutate(totalgrass= (pcov$PCovHalophila+pcov$PCovThalassia+pcov$PCovHalodule+pcov$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(pcov$PCovHalophila/totalgrass))
+
+##Making the NAs 0
+pcov[is.na(pcov)] <- 0
+
+#rename the dataframe
+depth_hal<-pcov
+
+##Make the depth bin categories##
+depth_hal<- depth_hal%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ 1,
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ 2,
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ 3 ))
+
+
+##Read in the fish data##
+AllMerged <- read_csv("AllMerged.csv")
+
+##making a dataframe
+AllMerged$Family<-as.factor(AllMerged$Family)
+
+#determine the total number of fish of each family that are on each transect to make dataframe for nMDS
+dhnMDSframe<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Family)
+ 
+#we want wide instead of long
+dhnMDSframe <- dhnMDSframe %>%
+  pivot_wider(names_from = Family , values_from = n)
+
+##Turning NAs to 0s
+dhnMDSframe[is.na(dhnMDSframe)] <- 0
+
+##Merging the two dataframes to make an nMDS dataframe, that contains 
+dhnMDSframe = merge(dhnMDSframe, depth_hal, by = "Transect")
+
+##Removing unnecessary columns
+#dhnMDSframe <- dhnMDSframe[,-21:-37]
+#dhnMDSframe <- dhnMDSframe[,-1]
+
+#Select for only the columns that contain the families so we can run the nMDS
+HnMDSframe<-dhnMDSframe%>%select(Aulostomidae:Haemulidae)
+
+#make a frame that has transect and our cat column in it to use for plotting purposes  
+plotframe<-dhnMDSframe%>%select(Aulostomidae:Haemulidae, Transect,dhcat)
+
+#run our nMDS
+family_NMDS <- metaMDS(HnMDSframe, k = 2, trymax = 100) 
+family_NMDS
+#Stress:     0.2339253 
+
+
+
+
+trans.cont.dh <- as.data.frame(family_NMDS$points)
+trans.cont.dh$dhcat <- dhnMDSframe[,20]
+
+ 
+
+##Making new ellipses for Halophila
+DHord <- ordiellipse(family_NMDS, trans.cont.dh$dhcat, conf = 0.95, label = TRUE)
+
+ 
+
+##Calling the hidden vegan function##
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+ 
+
+ 
+
+trans.cont.dh$dhcat <- factor(trans.cont.dh$dhcat)
+
+ 
+
+ 
+
+ 
+
+##Making a new dataframe for the Halophila ellipses
+DH_df_ell <- data.frame()
+for(g in levels(trans.cont.dh$dhcat)){
+  DH_df_ell <- rbind(DH_df_ell, cbind(as.data.frame(with(trans.cont.dh[trans.cont.dh$dhcat==g,],
+                                                               veganCovEllipse(DHord[[g]]$cov,DHord[[g]]$center,DHord[[g]]$scale)))
+                                            ,zone=g))
+}
+
+ 
+
+##Plot
+ggplot(trans.cont.dh) +
+  geom_point(aes(x = MDS1, y = MDS2, color = as.factor(dhcat)), size = 3) + geom_path(data = DH_df_ell, aes(x = NMDS1, y = NMDS2, group=zone, colour=zone), linetype=1, linewidth=2)+
+  theme_classic() +
+  labs(color = "cat", fill = "cat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+  theme(panel.border = element_rect(fill = NA),
+        legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Depth and Halophila Categories", labels = c("Greater than 15 m ", "Less than 15m and 100% Halophila", "Less than 15m and Less than 100% Halophila"),values = c("#3B9AB2","#EBCC2A", "#F21A00"))+scale_color_manual(name = "Depth", labels = c("Greater than 15 m", "Less than 15m and 100% Halophila", "Less than 15m and Less than 100% Halophila"), values = c("#3B9AB2","#EBCC2A","#F21A00"))
+
+ 
+
+DH_dissim_bray<- dhnMDSframe
+dh_bray <- vegdist(DH_dissim_bray[,1:19], method = "bray")
+    dh_bray
+
+ 
+
+    ##running the depth 1-Way PERMANOVA##
+    dh_Strata <- adonis2(dh_bray ~ DH_dissim_bray$dhcat, data = DH_dissim_bray[,1:19])
+    dh_Strata
+
+    ## DH simper
+    dh_simper <- simper(DH_dissim_bray[,1:19], permutations = 999, group = (DH_dissim_bray$dhcat))
+  summary(dh_simper)
+
+    ##Results
+  #Contrast: 3_1
+
+ 
+
+           #     average      sd   ratio     ava     avb cumsum     p    
+#Labridae        0.18416 0.18313 1.00570 8.42100 1.28600  0.232 0.426    
+#Lutjanidae      0.16823 0.17510 0.96080 0.05300 8.67900  0.445 0.001 ***
+#Gobiidae        0.12732 0.13045 0.97600 1.63200 5.71400  0.605 0.630    
+#Serranidae      0.10689 0.09100 1.17470 1.63200 4.75000  0.740 0.016 *  
+#Scaridae        0.07222 0.10119 0.71370 2.21100 1.60700  0.831 0.736    
+#Labrisomidae    0.03837 0.05042 0.76100 0.21100 1.39300  0.880 0.044 *  
+#Carangidae      0.02938 0.11892 0.24700 0.00000 2.50000  0.917 0.338    
+#Monacanthidae   0.02007 0.02516 0.79740 0.26300 0.67900  0.942 0.796    
+#Tetraodontidae  0.01758 0.03660 0.48040 0.47400 0.17900  0.965 0.139    
+#Pomacentridae   0.01066 0.03055 0.34890 0.52600 0.10700  0.978 0.915    
+#Clinidae        0.00684 0.03665 0.18650 0.00000 0.25000  0.987 0.313    
+#Haemulidae      0.00414 0.01542 0.26820 0.05300 0.14300  0.992 0.260    
+#Aulostomidae    0.00229 0.00801 0.28580 0.05300 0.03600  0.995 0.223    
+#Opistognathidae 0.00215 0.01238 0.17390 0.00000 0.03600  0.997 0.303    
+#Acanthuridae    0.00134 0.00709 0.18910 0.00000 0.07100  0.999 0.945    
+#Dactylopteridae 0.00074 0.00394 0.18850 0.00000 0.03600  1.000 0.306    
+#Holocentridae   0.00000 0.00000     NaN 0.00000 0.00000  1.000 0.745    
+#Syngnathidae    0.00000 0.00000     NaN 0.00000 0.00000  1.000 0.938    
+#Chaetodontidae  0.00000 0.00000     NaN 0.00000 0.00000  1.000 0.773    
+
+ 
+
+  # Fish in the family Lutjanidae (aka snappers) account for 21.3% of the   dissimilarity between the greater than 15m category and the less than 15 m with less than 100% Halophila category (p=.001)
+
+ 
+
+#Contrast: 3_2
+
+ 
+
+#                 average       sd    ratio      ava      avb cumsum     p    
+#Labridae       0.26277  0.20726  1.26780  8.42100 11.20000  0.376 0.001 ***
+#Gobiidae         0.14299  0.13176  1.08520  1.63200  5.40000  0.581 0.216  
+#Scaridae         0.09976  0.10690  0.93310  2.21100  3.53300  0.724 0.059 .
+#Serranidae       0.06324  0.07484  0.84490  1.63200  1.53300  0.814 0.997  #Pomacentridae    0.03127  0.06064  0.51570  0.52600  1.20000  0.859 0.008 ** #Monacanthidae    0.02600  0.03429  0.75850  0.26300  0.80000  0.896 0.071 #Tetraodontidae   0.01744  0.04027  0.43310  0.47400  0.13300  0.921 0.286   #Labrisomidae     0.01592  0.02906  0.54790  0.21100  0.33300  0.944 0.994  #Lutjanidae       0.01403  0.02363  0.59370  0.05300  0.46700  0.964 1.000  #Syngnathidae    0.00767  0.02429  0.31570  0.00000  0.20000  0.975 0.001 ***
+#Acanthuridae     0.00674  0.01802  0.37390  0.00000  0.46700  0.985 0.119  #Chaetodontidae   0.00473  0.02025  0.23350  0.00000  0.06700  0.992 0.007 ** #Holocentridae    0.00270  0.01072  0.25200  0.00000  0.06700  0.995 0.006 ** #Haemulidae       0.00165  0.00772  0.21390  0.05300  0.00000  0.998 0.755  #Aulostomidae     0.00154  0.00712  0.21590  0.05300  0.00000  1.000 0.581  #Clinidae         0.00000  0.00000      NaN  0.00000  0.00000  1.000 0.546  #Dactylopteridae  0.00000  0.00000      NaN  0.00000  0.00000  1.000 0.560  #Carangidae       0.00000  0.00000      NaN  0.00000  0.00000  1.000 0.962  #Opistognathidae  0.00000  0.00000      NaN  0.00000  0.00000  1.000 0.532    
+
+ 
+
+#Contrast: 1_2
+
+ 
+
+#                 average       sd    ratio      ava      avb cumsum     p  
+#Labridae         0.17351  0.16450  1.05480  1.28600 11.20000  0.225 0.608  
+#Lutjanidae       0.14687  0.15930  0.92190  8.67900  0.46700  0.416 0.106  
+#Gobiidae         0.13724  0.12792  1.07280  5.71400  5.40000  0.594 0.304  
+#Serranidae       0.09477  0.08432  1.12390  4.75000  1.53300  0.717 0.353  
+#Scaridae         0.07763  0.09470  0.81970  1.60700  3.53300  0.817 0.485  
+#Labrisomidae     0.03307  0.04489  0.73680  1.39300  0.33300  0.860 0.390  
+#Carangidae       0.02686  0.11117  0.24160  2.50000  0.00000  0.895 0.465  
+#Monacanthidae    0.02318  0.02741  0.84550  0.67900  0.80000  0.925 0.303  
+#Pomacentridae    0.02099  0.04699  0.44670  0.10700  1.20000  0.952 0.249  
+#Tetraodontidae   0.00721  0.01627  0.44290  0.17900  0.13300  0.962 0.964  
+#Acanthuridae     0.00677  0.01657  0.40860  0.07100  0.46700  0.971 0.067 .
+#Clinidae         0.00591  0.03271  0.18070  0.25000  0.00000  0.978 0.504  
+#Syngnathidae     0.00590  0.01911  0.30870  0.00000  0.20000  0.986 0.089 .
+#Chaetodontidae   0.00322  0.01443  0.22290  0.00000  0.06700  0.990 0.229  
+#Haemulidae       0.00239  0.01288  0.18530  0.14300  0.00000  0.993 0.641  
+#Holocentridae    0.00207  0.00852  0.24340  0.00000  0.06700  0.996 0.214  
+#Opistognathidae  0.00175  0.01085  0.16150  0.03600  0.00000  0.998 0.470  
+#Aulostomidae     0.00082  0.00454  0.18110  0.03600  0.00000  0.999 0.859  
+#Dactylopteridae  0.00066  0.00356  0.18430  0.03600  0.00000  1.000 0.522  
+
+
+```
+
+```{r final nMDS}
+library(tidyverse)
+library(vegan)
+
+pcov<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#Add new column for % halophila/ % total seagrass cover#
+pcov<-pcov %>% 
+  mutate(totalgrass= (pcov$PCovHalophila+pcov$PCovThalassia+pcov$PCovHalodule+pcov$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(pcov$PCovHalophila/totalgrass))
+
+##Making the NAs 0
+pcov[is.na(pcov)] <- 0
+
+#rename the dataframe
+depth_hal<-pcov
+
+##Make the depth bin categories##
+depth_hal<- depth_hal%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ 1,
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ 2,
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ 3 ))
+
+
+##Read in the fish data##
+AllMerged <- read.csv("AllMerged.csv")
+
+##making a dataframe
+AllMerged$Family<-as.factor(AllMerged$Family)
+
+#determine the total number of fish of each family that are on each transect to make dataframe for nMDS
+dhnMDSframe<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Family)
+ 
+#we want wide instead of long
+dhnMDSframe <- dhnMDSframe %>%
+  pivot_wider(names_from = Family , values_from = n)
+
+##Turning NAs to 0s
+dhnMDSframe[is.na(dhnMDSframe)] <- 0
+
+##Merging the two dataframes to make an nMDS dataframe, tabular by transect 
+dhnMDSframe = merge(dhnMDSframe, depth_hal, by = "Transect")
+
+##Removing unnecessary columns
+#dhnMDSframe <- dhnMDSframe[,-21:-37]
+#dhnMDSframe <- dhnMDSframe[,-1]
+
+#Select for only the columns that contain the families so we can run the nMDS
+  HnMDSframe<-dhnMDSframe%>%
+    select(`Aulostomidae `:Haemulidae)
+
+#make a frame that has transect and our cat column in it to use for plotting purposes  
+plotframe<-dhnMDSframe%>%
+  select(`Aulostomidae `:Haemulidae, Transect,dhcat)
+
+#now run the nMDS 
+final_NMDS <- metaMDS(HnMDSframe, k = 2, trymax = 100) 
+final_NMDS
+#Stress:     0.2339253 
+
+stressplot(final_NMDS)
+#non metric r squared 0.945
+#linear fit r2=0.72
+
+##pulling the species locations out of the NMDS (x and y)
+fam <- as.data.frame(final_NMDS$species)
+
+# this line is pulling the species names and linking them to thier location
+fam$sp <- rownames(final_NMDS$species)
+
+
+#this is pulling the points for each individual transect out of the nmds
+  transect <- as.data.frame(final_NMDS$points)
+
+#we are pulling the dhcat out of our plotframe that we made earlier so we can make the polygons depth/percent halophila
+  transect$dhcat <- plotframe[,21] 
+
+#need to keep this code because you cant pull the points in the next line unless if this ordiplot exists
+ordiplot(final_NMDS, type = "none") 
+
+#this is storing the info to make the 95% confidence intervals as an object 
+finallord<-ordiellipse(final_NMDS, transect$dhcat, conf = 0.95, label = TRUE)
+
+#hidden vegan function that calculates ellipses
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+#convert zone to a factor
+transect$dhcat <- factor(transect$dhcat)
+
+#create a dataframe of points that will draw the ellipses
+final_df_ell <- data.frame()
+
+for(g in levels(transect$dhcat)){
+  final_df_ell <- rbind(final_df_ell, cbind(as.data.frame(with(transect[transect$dhcat==g,],
+                                                   veganCovEllipse(finallord[[g]]$cov,finallord[[g]]$center,finallord[[g]]$scale)))
+                                ,zone=g))
+}
+
+#plot
+ggplot(transect) +
+  geom_point(aes(x = MDS1, y = MDS2, color = as.factor(dhcat)), size = 3) + geom_path(data = final_df_ell, aes(x = NMDS1, y = NMDS2, group = zone))+
+  theme_classic() +
+  labs(color = "dhcat", fill = "dhcat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fam, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Category", labels = c("Greater than 15m", "100% Halophila less than 15m","Less than 100% Halophila and Less than 15m"),values = c("#3B9AB2","#EBCC2A","purple"))+scale_color_manual(name = "Category", labels = c("Greater than 15m", "100% Halophila less than 15m","Less than 100% Halophila and Less than 15m"), values = c("#3B9AB2","#EBCC2A","purple"))
+
+
+#now run post hoc stuff to see if we have significant differences between the groups
+
+final_dissim_bray<- HnMDSframe
+
+
+final_bray <- vegdist(final_dissim_bray, method = "bray")
+    final_bray
+
+ 
+
+    ##running the depth 1-Way PERMANOVA##
+    dh_Strata <- adonis2(final_bray ~ plotframe$dhcat, data = final_dissim_bray)
+    dh_Strata
+    
+    
+#there is a significant difference 
+    
+     ## DH simper
+       dh_simper <- simper(final_dissim_bray, permutations = 999, group = (transect$dhcat))
+  summary(dh_simper)
+  
+  
+#One= greater than 15m
+#Two= Less than 15m and all seagrass present is Halophila
+#Three= Less than 15m, not all seagrass is Halophila
+  
+  
+  
+#3_1 is significant, simper shows that shallow seagrass containing native species has significantly different Lutjanidae, Serranidae, Labrisomidae (? stef and aves got significant I did not) than deep
+  
+#3_2 is significant simper shows that seagrass with native is significantly different Labridae, Pomacentridae, Syngnathidae, Chaetodontidae, Holocentridae than shallow 100% halophila
+  
+  
+#1_2 no significant families different in shallow and deep halophila
+  
+  ((depth >= 15.0) ~ 1,
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ 2,
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ 3 ))
+
+
+Contrast: 3_1 
+
+                average      sd   ratio     ava     avb cumsum     p   
+Labridae        0.18416 0.18313 1.00570 8.42100 1.28600  0.232 0.424   
+Lutjanidae      0.16823 0.17510 0.96080 0.05300 8.67900  0.445 0.002 **
+Gobiidae        0.12732 0.13045 0.97600 1.63200 5.71400  0.605 0.673   
+Serranidae      0.10689 0.09100 1.17470 1.63200 4.75000  0.740 0.011 * 
+Scaridae        0.07222 0.10119 0.71370 2.21100 1.60700  0.831 0.769   
+Labrisomidae    0.03837 0.05042 0.76100 0.21100 1.39300  0.880 0.056 . 
+Carangidae      0.02938 0.11892 0.24700 0.00000 2.50000  0.917 0.323   
+Monacanthidae   0.02007 0.02516 0.79740 0.26300 0.67900  0.942 0.803   
+Tetraodontidae  0.01758 0.03660 0.48040 0.47400 0.17900  0.965 0.118   
+Pomacentridae   0.01066 0.03055 0.34890 0.52600 0.10700  0.978 0.913   
+Clinidae        0.00684 0.03665 0.18650 0.00000 0.25000  0.987 0.329   
+Haemulidae      0.00414 0.01542 0.26820 0.05300 0.14300  0.992 0.233   
+Aulostomidae    0.00229 0.00801 0.28580 0.05300 0.03600  0.995 0.222   
+Opistognathidae 0.00215 0.01238 0.17390 0.00000 0.03600  0.997 0.312   
+Acanthuridae    0.00134 0.00709 0.18910 0.00000 0.07100  0.999 0.833   
+Dactylopteridae 0.00074 0.00394 0.18850 0.00000 0.03600  1.000 0.312   
+Holocentridae   0.00000 0.00000     NaN 0.00000 0.00000  1.000 0.741   
+Syngnathidae    0.00000 0.00000     NaN 0.00000 0.00000  1.000 0.931   
+Chaetodontidae  0.00000 0.00000     NaN 0.00000 0.00000  1.000 0.760   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Contrast: 3_2 
+
+                 average       sd    ratio      ava      avb cumsum
+Labridae         0.26329  0.20737  1.26970  8.42100 11.20000  0.377
+Gobiidae         0.14315  0.13177  1.08640  1.63200  5.40000  0.583
+Scaridae         0.09991  0.10701  0.93360  2.21100  3.53300  0.726
+Serranidae       0.06338  0.07501  0.84500  1.63200  1.53300  0.817
+Pomacentridae    0.03189  0.06281  0.50780  0.52600  1.20000  0.862
+Monacanthidae    0.02603  0.03431  0.75880  0.26300  0.80000  0.900
+Tetraodontidae   0.01749  0.04037  0.43320  0.47400  0.13300  0.925
+Labrisomidae     0.01595  0.02911  0.54790  0.21100  0.33300  0.948
+Lutjanidae       0.01403  0.02364  0.59380  0.05300  0.46700  0.968
+Syngnathidae     0.00767  0.02429  0.31570  0.00000  0.20000  0.979
+Chaetodontidae   0.00473  0.02025  0.23350  0.00000  0.06700  0.986
+Acanthuridae     0.00403  0.01521  0.26510  0.00000  0.40000  0.991
+Holocentridae    0.00283  0.01128  0.25100  0.00000  0.06700  0.995
+Haemulidae       0.00166  0.00774  0.21390  0.05300  0.00000  0.998
+Aulostomidae     0.00154  0.00713  0.21590  0.05300  0.00000  1.000
+Clinidae         0.00000  0.00000      NaN  0.00000  0.00000  1.000
+Dactylopteridae  0.00000  0.00000      NaN  0.00000  0.00000  1.000
+Carangidae       0.00000  0.00000      NaN  0.00000  0.00000  1.000
+Opistognathidae  0.00000  0.00000      NaN  0.00000  0.00000  1.000
+                    p    
+Labridae        0.001 ***
+Gobiidae        0.234    
+Scaridae        0.064 .  
+Serranidae      0.999    
+Pomacentridae   0.006 ** 
+Monacanthidae   0.083 .  
+Tetraodontidae  0.290    
+Labrisomidae    0.998    
+Lutjanidae      1.000    
+Syngnathidae    0.002 ** 
+Chaetodontidae  0.006 ** 
+Acanthuridae    0.310    
+Holocentridae   0.011 *  
+Haemulidae      0.765    
+Aulostomidae    0.533    
+Clinidae        0.584    
+Dactylopteridae 0.528    
+Carangidae      0.968    
+Opistognathidae 0.557    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Contrast: 1_2 
+
+                 average       sd    ratio      ava      avb cumsum
+Labridae         0.17391  0.16461  1.05650  1.28600 11.20000  0.226
+Lutjanidae       0.14713  0.15956  0.92210  8.67900  0.46700  0.417
+Gobiidae         0.13749  0.12816  1.07280  5.71400  5.40000  0.595
+Serranidae       0.09498  0.08452  1.12380  4.75000  1.53300  0.718
+Scaridae         0.07773  0.09483  0.81960  1.60700  3.53300  0.819
+Labrisomidae     0.03315  0.04500  0.73670  1.39300  0.33300  0.862
+Carangidae       0.02689  0.11126  0.24170  2.50000  0.00000  0.897
+Monacanthidae    0.02321  0.02744  0.84580  0.67900  0.80000  0.927
+Pomacentridae    0.02139  0.04861  0.44000  0.10700  1.20000  0.955
+Tetraodontidae   0.00722  0.01630  0.44280  0.17900  0.13300  0.964
+Clinidae         0.00592  0.03278  0.18070  0.25000  0.00000  0.972
+Syngnathidae     0.00590  0.01911  0.30870  0.00000  0.20000  0.980
+Acanthuridae     0.00479  0.01498  0.31980  0.07100  0.40000  0.986
+Chaetodontidae   0.00322  0.01443  0.22290  0.00000  0.06700  0.990
+Haemulidae       0.00239  0.01290  0.18530  0.14300  0.00000  0.993
+Holocentridae    0.00215  0.00889  0.24210  0.00000  0.06700  0.996
+Opistognathidae  0.00176  0.01088  0.16170  0.03600  0.00000  0.998
+Aulostomidae     0.00082  0.00455  0.18110  0.03600  0.00000  0.999
+Dactylopteridae  0.00066  0.00357  0.18430  0.03600  0.00000  1.000
+                    p  
+Labridae        0.574  
+Lutjanidae      0.105  
+Gobiidae        0.327  
+Serranidae      0.353  
+Scaridae        0.539  
+Labrisomidae    0.412  
+Carangidae      0.469  
+Monacanthidae   0.284  
+Pomacentridae   0.244  
+Tetraodontidae  0.966  
+Clinidae        0.536  
+Syngnathidae    0.086 .
+Acanthuridae    0.166  
+Chaetodontidae  0.233  
+Haemulidae      0.657  
+Holocentridae   0.218  
+Opistognathidae 0.471  
+Aulostomidae    0.855  
+Dactylopteridae 0.536  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Permutation: free
+Number of permutations: 999
+
+
+
+```
+
+Plot Densities of top 90% families differences
+```{r}
+#3_1 is significant, simper shows that shallow seagrass containing native species has significantly different Lutjanidae, Serranidae, Labrisomidae (? stef and aves got significant I did not) than deep
+
+#                average      sd   ratio     ava     avb cumsum     p   
+#Labridae        0.18416 0.18313 1.00570 8.42100 1.28600  0.232 0.424   
+#Lutjanidae      0.16823 0.17510 0.96080 0.05300 8.67900  0.445 0.002 **
+#Gobiidae        0.12732 0.13045 0.97600 1.63200 5.71400  0.605 0.673   
+#Serranidae      0.10689 0.09100 1.17470 1.63200 4.75000  0.740 0.011 * 
+#Scaridae        0.07222 0.10119 0.71370 2.21100 1.60700  0.831 0.769   
+#Labrisomidae    0.03837 0.05042 0.76100 0.21100 1.39300  0.880 0.056 . 
+#Carangidae      0.02938 0.11892 0.24700 0.00000 2.50000  0.917 0.323 
+
+
+#plotting densities of top 90% fish shallow not all halophila vs >15m
+
+
+#we have the number of fish per transect in we fixed it analyze me, we need to calculate density
+deepvsnative<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+
+#our transects were 100m2 so we divided the total number of fish by 100, to get fish density per transect
+deepvsnative<-deepvsnative%>%mutate("density"=(N/100))
+
+#adding a totalgrass column, sum of all grass present, and calculating the percent of present seagrass that is halophila 
+deepvsnative<-deepvsnative %>% 
+  mutate(totalgrass= (pcov$PCovHalophila+pcov$PCovThalassia+pcov$PCovHalodule+pcov$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(pcov$PCovHalophila/totalgrass))
+
+#cannot divide by 0, when total cover is zero got nas, change to zeros 
+deepvsnative[is.na(deepvsnative)]<-0
+
+##Make the depth bin categories##
+deepvsnative<- deepvsnative%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ 1,
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ 2,
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ 3 ))
+
+
+
+#import dataframe
+GNativeVsNon<-read.csv("AllMerged.csv")
+
+#count of number of each family on each transect, want tabular by transect, replaced NA with zeros, then selected the families contributing to 90% of the difference
+
+FNativeVsNon<-FDeepVsNative%>%group_by(Transect)%>%
+  count(Family)%>%pivot_wider(names_from = Family, values_from = n)%>%
+  mutate_all(~replace(., is.na(.), 0))
+
+
+  FNativeVsNon<-FNativeVsNon%>%select(Transect,Labridae, Lutjanidae, Gobiidae, Serranidae, Scaridae, Labrisomidae, Carangidae,Pomacentridae, Monacanthidae )%>%mutate("Lab"=Labridae/100, 
+                                  "Lut"=Lutjanidae/100,
+                                  "Gob"=Gobiidae/100,
+                                  "Ser"=Serranidae/100,
+                                  "Scar"=Scaridae/100,
+                                  "Labm"=Labrisomidae/100,
+                                  "Car"=Carangidae/100,
+                                  "Pom"=Pomacentridae/100,
+                                  "Mon"=Monacanthidae/100)
+  
+
+
+#now merge the two dataframes we just want the dhcat from the first dataframe 
+FNativeVsNon<-merge(FNativeVsNon, deepvsnative[,c("Transect", "dhcat")], by="Transect")
+
+#select columns I want 
+plotframe <- FNativeVsNon%>%select(Transect, Lab, Lut, Gob, Ser, Scar, Labm, Car, Pom, Mon, dhcat)
+
+plotframe <- plotframe%>%
+  pivot_longer(cols = Lab:Mon,
+               names_to = "Family",
+               values_to = "density")%>%
+  mutate(dhcat = as.factor(dhcat))
+
+FNativeVsNonPlot <- ggplot(data = plotframe, aes(x = Family, y = density, fill = dhcat))+
+  geom_col(position = position_dodge(0.9), width = 0.75)+
+  labs(x = "Family", y = "Densities", fill = "Categories")  
+
+FNativeVsNonPlot
+
+```
+
+These are the families contributing to the top 90 percent of difference between groups
+
+Labridae        0.18416 0.18313 1.00570 8.42100 1.28600  0.232 0.424   
+Lutjanidae      0.16823 0.17510 0.96080 0.05300 8.67900  0.445 0.002 **
+Gobiidae        0.12732 0.13045 0.97600 1.63200 5.71400  0.605 0.673   
+Serranidae      0.10689 0.09100 1.17470 1.63200 4.75000  0.740 0.011 * 
+Scaridae        0.07222 0.10119 0.71370 2.21100 1.60700  0.831 0.769   
+Labrisomidae    0.03837 0.05042 0.76100 0.21100 1.39300  0.880 0.056 . 
+Carangidae      0.02938 0.11892 0.24700 0.00000 2.50000  0.917 0.323  
+
+                 average       sd    ratio      ava      avb cumsum
+Labridae         0.26329  0.20737  1.26970  8.42100 11.20000  0.377
+Gobiidae         0.14315  0.13177  1.08640  1.63200  5.40000  0.583
+Scaridae         0.09991  0.10701  0.93360  2.21100  3.53300  0.726
+Serranidae       0.06338  0.07501  0.84500  1.63200  1.53300  0.817
+Pomacentridae    0.03189  0.06281  0.50780  0.52600  1.20000  0.862
+Monacanthidae    0.02603  0.03431  0.75880  0.26300  0.80000  0.900
+
+                 average       sd    ratio      ava      avb cumsum
+Labridae         0.17391  0.16461  1.05650  1.28600 11.20000  0.226
+Lutjanidae       0.14713  0.15956  0.92210  8.67900  0.46700  0.417
+Gobiidae         0.13749  0.12816  1.07280  5.71400  5.40000  0.595
+Serranidae       0.09498  0.08452  1.12380  4.75000  1.53300  0.718
+Scaridae         0.07773  0.09483  0.81960  1.60700  3.53300  0.819
+Labrisomidae     0.03315  0.04500  0.73670  1.39300  0.33300  0.862
+Carangidae       0.02689  0.11126  0.24170  2.50000  0.00000  0.897
+Monacanthidae    0.02321  0.02744  0.84580  0.67900  0.80000  0.927
+
+
+```{r Lab KW}
+library(FSA)#for DunnPost Hoc
+library(rcompanion)#for cldList function
+library(tidyverse)
+
+View(plotframe)
+
+#filter for Labridae only 
+Lab<-plotframe%>%filter(Family=="Lab")
+
+Lab%>%ggplot(aes(x=Transect, y=density))+
+  geom_point()
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Lab)
+#p-value = 6.948e-16
+
+hist(Lab$density)
+
+#transform log x+1
+Lab$logxplus1<-log(Lab$density+1)
+
+hist(Lab$logxplus1)
+
+
+#try boxcox transformation
+#https://stackoverflow.com/questions/33999512/how-to-use-the-box-cox-power-transformation-in-r
+
+density<-c(Lab[,'density'])
+unlist(density)
+dhcat<-as.vector(Lab[,'dhcat'])
+boxcox(density~dhcat)
+
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Lab)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 17.592, df = 2, p-value =
+#0.0001513
+
+
+#now we run post hoc analysis
+LabDunn=dunnTest(density ~ dhcat,
+  data = Lab)
+
+LabDunn
+
+#Dunn (1964) Kruskal-Wallis multiple comparison
+#  p-values adjusted with the Holm method.
+
+#  Comparison          Z      P.unadj       P.adj
+#1      1 - 2 -3.3737694 0.0007414646 0.001482929
+#2      1 - 3 -3.5765002 0.0003482251 0.001044675
+#3      2 - 3  0.0476598 0.9619873716 0.961987372
+
+Lab1 = LabDunn$res
+
+cldList(comparison = Lab1$Comparison,
+        p.value    = Lab1$P.adj,
+        threshold  = 0.05)
+
+#  Group Letter MonoLetter
+#1     1      a         a 
+#2     2      b          b
+#3     3      b          b
+
+```
+
+```{r Gob KW}
+View(plotframe)
+
+#filter for Labridae only 
+Gob<-plotframe%>%filter(Family=="Gob")
+
+hist(Gob)
+hist(Gob$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Gob)
+#p-value = 5.067e-05
+
+
+#transform log x+1
+Gob$logxplus1<-log(Gob$density+1)
+
+hist(Gob$logxplus1)
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Gob)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 8.5397, df = 2, p-value = 0.01398
+
+
+#now we run post hoc analysis
+GobDunn=dunnTest(density ~ dhcat,
+  data = Gob)
+
+GobDunn
+
+#  Comparison         Z    P.unadj      P.adj
+#1      1 - 2 0.1243478 0.90103987 0.90103987
+#2      1 - 3 2.7526420 0.00591165 0.01773495
+#3      2 - 3 2.2535917 0.02422187 0.04844373
+
+Gob1 = GobDunn$res
+
+cldList(comparison = Gob1$Comparison,
+        p.value    = Gob1$P.adj,
+        threshold  = 0.05)
+
+#  Group Letter MonoLetter
+#1     1      a         a 
+#2     2      a         a 
+#3     3      b          b
+```
+
+```{r Scar KW}
+View(plotframe)
+
+#filter for Labridae only 
+Scar<-plotframe%>%filter(Family=="Scar")
+
+
+hist(Scar$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Scar)
+#p-value = 0.1001
+
+
+ScarANOVA <- aov(density ~ dhcat, data = Scar)
+
+# then we can easily pull them out of the output
+aov_residuals <- residuals(ScarANOVA)
+
+# let's first look to see if they look approximately normally distributed
+hist(aov_residuals)
+
+# then we can test if the residuals are approximately normally distributed with the Shapiro-Wilk Test
+shapiro.test(aov_residuals) 
+#nope, sad day, nan parametric it is
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Scar)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 2.0336, df = 2, p-value = 0.3618
+
+```
+
+```{r Ser KW}
+View(plotframe)
+
+#filter for Labridae only 
+Ser<-plotframe%>%filter(Family=="Ser")
+
+
+hist(Ser$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Ser)
+#p-value = 0.0008415
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Ser)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 11.466, df = 2, p-value =
+#0.003237
+
+#now we run post hoc analysis
+SerDunn=dunnTest(density ~ dhcat,
+  data = Ser)
+
+SerDunn
+
+#  Comparison          Z     P.unadj       P.adj
+#1      1 - 2  2.9840092 0.002844982 0.008534946
+#2      1 - 3  2.6040913 0.009211821 0.018423641
+#3      2 - 3 -0.5233973 0.600697770 0.600697770
+
+Ser1 = SerDunn$res
+
+cldList(comparison = Ser1$Comparison,
+        p.value    = Ser1$P.adj,
+        threshold  = 0.05)
+
+#  Group Letter MonoLetter
+#1     1      a         a 
+#2     2      b          b
+#3     3      b          b
+```
+
+```{r Scar KW}
+View(plotframe)
+
+#filter for Labridae only 
+Scar<-plotframe%>%filter(Family=="Scar")
+
+
+hist(Scar$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Scar)
+#p-value = 0.1001
+
+
+ScarANOVA <- aov(density ~ dhcat, data = Scar)
+
+# then we can easily pull them out of the output
+aov_residuals <- residuals(ScarANOVA)
+
+# let's first look to see if they look approximately normally distributed
+hist(aov_residuals)
+
+# then we can test if the residuals are approximately normally distributed with the Shapiro-Wilk Test
+shapiro.test(aov_residuals) 
+#nope, sad day, nan parametric it is
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Scar)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 2.0336, df = 2, p-value = 0.3618
+
+```
+
+```{r Pom KW}
+View(plotframe)
+
+#filter for Labridae only 
+Pom<-plotframe%>%filter(Family=="Pom")
+
+
+hist(Pom$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Pom)
+# p-value = 1.726e-10
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Pom)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 5.1612, df = 2, p-value = 0.07573
+```
+
+```{r Mon KW}
+View(plotframe)
+
+#filter for Labridae only 
+Mon<-plotframe%>%filter(Family=="Mon")
+
+
+hist(Mon$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Mon)
+#-value = 0.03855
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Mon)
+
+#Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 3.6407, df = 2, p-value = 0.162
+```
+
+
+```{r Lut KW}
+View(plotframe)
+
+#filter for Labridae only 
+Lut<-plotframe%>%filter(Family=="Lut")
+
+
+hist(Lut$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Lut)
+#p-value < 2.2e-16
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Lut)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 20.804, df = 2, p-value =
+#3.038e-05
+
+#now we run post hoc analysis
+LutDunn=dunnTest(density ~ dhcat,
+  data = Lut)
+
+LutDunn
+
+#  Comparison        Z      P.unadj        P.adj
+#1      1 - 2 2.795159 5.187424e-03 1.037485e-02
+#2      1 - 3 4.390115 1.132909e-05 3.398728e-05
+#3      2 - 3 1.188514 2.346311e-01 2.346311e-01
+
+Lut1 = LutDunn$res
+
+cldList(comparison = Lut1$Comparison,
+        p.value    = Lut1$P.adj,
+        threshold  = 0.05)
+
+#  Group Letter MonoLetter
+#1     1      a         a 
+#2     2      b          b
+#3     3      b         b
+```
+
+
+```{r Lut KW}
+View(plotframe)
+
+#filter for Labridae only 
+Lut<-plotframe%>%filter(Family=="Lut")
+
+
+hist(Lut$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Lut)
+#p-value < 2.2e-16
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Lut)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 20.804, df = 2, p-value =
+#3.038e-05
+
+#now we run post hoc analysis
+LutDunn=dunnTest(density ~ dhcat,
+  data = Lut)
+
+LutDunn
+
+#  Comparison        Z      P.unadj        P.adj
+#1      1 - 2 2.795159 5.187424e-03 1.037485e-02
+#2      1 - 3 4.390115 1.132909e-05 3.398728e-05
+#3      2 - 3 1.188514 2.346311e-01 2.346311e-01
+
+Lut1 = LutDunn$res
+
+cldList(comparison = Lut1$Comparison,
+        p.value    = Lut1$P.adj,
+        threshold  = 0.05)
+
+#  Group Letter MonoLetter
+#1     1      a         a 
+#2     2      b          b
+#3     3      b         b
+```
+
+
+```{r Labm KW}
+View(plotframe)
+
+#filter for Labridae only 
+Labm<-plotframe%>%filter(Family=="Labm")
+
+
+hist(Labm$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Labm)
+#p-value = 7.084e-10
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Labm)
+
+#	Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 6.8654, df = 2, p-value = 0.0323#
+
+#now we run post hoc analysis
+LabmDunn=dunnTest(density ~ dhcat,
+  data = Labm)
+
+LabmDunn
+
+#  Comparison         Z    P.unadj      P.adj
+#1      1 - 2 1.7134507 0.08662966 0.17325931
+#2      1 - 3 2.4806467 0.01311443 0.03934329
+#3      2 - 3 0.5474016 0.58410288 0.58410288
+
+Labm1 = LabmDunn$res
+
+cldList(comparison = Labm1$Comparison,
+        p.value    = Labm1$P.adj,
+        threshold  = 0.05)
+
+# Group Letter MonoLetter
+#1     1      a         a 
+#2     2     ab         ab
+#3     3      b          b
+```
+
+
+```{r Car KW}
+View(plotframe)
+
+#filter for Labridae only 
+Car<-plotframe%>%filter(Family=="Car")
+
+
+hist(Car$density)
+
+#bartlet test for equal vaiance
+
+bartlett.test(density~dhcat, Car)
+#-value < 2.2e-16
+
+# too many zeros run non parametric equivalent
+
+kruskal.test(density~dhcat, data=Car)
+
+#Kruskal-Wallis rank sum test
+
+#data:  density by dhcat
+#Kruskal-Wallis chi-squared = 5.1013, df = 2, p-value = 0.07803
+```
+
+```{r}
+
+sigs<-c("a","a","a","a","a","b","a","a","b","a","ab","b","a","b","b","a","a","a","a","a","a","a","a","a","a","b","b")
+
+FNativeVsNonPlot <- ggplot(data = plotframe, aes(x = Family, y = density, fill = dhcat))+
+  geom_col(position = position_dodge(0.9), width = 0.75)+
+  labs(x = "Family", y = "Densities", fill = "Categories")  
+
+FNativeVsNonPlot
+
+
+```
+
+
+```{r Separating Snappers}
+library(readr)
+library(tidyverse)
+library(vegan)
+
+AllMerged<- read_csv("AllMerged.csv")
+
+snap<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Common.Names)
+
+snap<-snap%>%
+  pivot_wider(names_from = Common.Names , values_from = n)
+
+##Turning NAs to 0s
+snap[is.na(snap)] <- 0
+
+#keep only the snappers
+snap<- snap %>% select("Yellowtail Snapper", "Lane Snapper", "Cubera Snapper")
+
+#calculate density of each species on each transect
+snap<-snap%>%mutate(ysdens=`Yellowtail Snapper`/100, lsdens=`Lane Snapper`/100, csdens=`Cubera Snapper`/100)
+
+#select for density columns only
+snap<-snap%>%select(Transect,ysdens, lsdens, csdens)
+
+snap<-snap%>%
+  pivot_longer(cols = ysdens:csdens,
+               names_to = "Species",
+               values_to = "density")
+
+fish_den<- read_csv("Data/WeFixedItAnalyzeMe.csv")
+
+fish_den<-fish_den %>%
+  mutate(totalgrass= (fish_den$PCovHalophila+fish_den$PCovThalassia+fish_den$PCovHalodule+fish_den$PCovSyringodium)) %>%
+  mutate(PerHalTotal=(fish_den$PCovHalophila/totalgrass))
+
+##Making the NAs 0
+fish_den[is.na(fish_den)] <- 0
+
+
+##Make a depth column##
+ fish_den <- fish_den %>%
+       mutate(dcat = case_when((depth >= 15.0) ~ "deep",
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ "hal",
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ "native" ))
+
+snapsbro<- merge(fish_den, snap, by= "Transect")
+
+snapsbro<-snapsbro%>%select(Transect,)
+
+snapsbroplot<-ggplot(data=snapsbro, aes(x=dcat, y= density, fill= Species)) +
+geom_bar(stat="identity", position=position_dodge())
+  #geom_errorbar( aes(x=name, ymin=value-sd, ymax=value+sd), width=0.4, colour="orange", alpha=0.9, size=1.3)
+
+
+snapsbroplot
+
+snapsbroy<-snapsbro %>% filter(Species == "ysdens")
+kruskal.test(snapsbroy$density ~ snapsbroy$dcat, data = snapsbroy)
+
+  ##Kruskal-Wallis rank sum test
+  ##data:  snapsbroy$density by snapsbroy$dcat
+  ##Kruskal-Wallis chi-squared = 1.0818, df = 2, p-value = 0.5822
+
+snapsbrol<-snapsbro%>%filter(Species=="lsdens")
+kruskal.test(snapsbroy$density ~ snapsbroy$dcat, data = snapsbrol)
+
+```
+

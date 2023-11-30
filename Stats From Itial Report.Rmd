@@ -1,0 +1,647 @@
+---
+title: "Stats from Initial Report"
+author: "Kaitlin Rommelfanger"
+date: "2023-10-29"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libraries and CSVs}
+#csvs needed
+
+#WeFixedItAnalyzeMe.csv (or if you ran the data cleaning code, whatever you called the csv at the end)
+finalanalyze1 <- read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#libraries
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(DHARMa)#for simulate residuals
+library(readr)
+library(patchwork)#combining plots
+```
+
+Multiple linear regression, looking at the effect of 
+  depth, 
+  halophila percent cover, 
+  native seagrass percent cover, 
+  and the interaction between depth and halophila percent cover 
+                                                      on simpsons diversity
+                                                      
+                                                      
+#question, where is the slope coming from in the equation of the line we have here in this chunk??
+
+```{r Multi Linear Regression, echo=TRUE}
+
+#multi linear regression Simpsons Diversity, this model includes Percent cover halophila, percent cover native seagrasses, depth and the interaction of percent cover of halophila and depth
+
+#check for correlation of explanitory variables
+#filter dataset
+lrframe<-finalanalyze1%>%select(simpsons, depth, PCovHalophila, nativecover)
+cor(lrframe[2:4])
+#                   depth PCovHalophila nativecover
+#depth          1.0000000     0.4630062  -0.3676187
+#PCovHalophila  0.4630062     1.0000000  -0.3483150
+#nativecover   -0.3676187    -0.3483150   1.0000000
+
+#looks good
+
+# visualize the data
+hist(finalanalyze1$simpsons)#skewed right
+
+hist((finalanalyze1$simpsons)^2)
+#better
+
+#this is skewed right so we need to square it
+allsimpsonreg<-lm((finalanalyze1$simpsons)^2~finalanalyze1$PCovHalophila+ finalanalyze1$nativecover+finalanalyze1$depth+finalanalyze1$PCovHalophila*finalanalyze1$depth)
+
+#check assumptions 
+plot(allsimpsonreg)
+
+summary(allsimpsonreg) 
+#There is a significant negative effect of nativecover on simpson, multiple r2:0.1569, F=2.652, p=0.00592
+
+
+
+# Plot the model
+ggplot(finalanalyze1, aes(x = depth, y = (simpsons)^2)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  xlab("Depth (m)") +
+  ylab("Simpson's Diversity Index (Squared)") +
+  geom_text(aes(x = 15, y = 0.95, label = "y = (-4.771e-03)x + 0.6613\nR^2 = 0.0953", label.size=0.25))+
+  theme_classic() +
+  theme(plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"),
+        axis.title = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16)) +
+  theme(axis.text = element_text(size = 12))
+
+#our r squared is very low, 0.0953, grey is 95% confidence interval
+
+#question, where is the slope coming from in the equation of the line we have here in this chunk??
+```
+
+Looking at the effect of depth on presence or absence of native seagrasses
+
+```{r Logistic Regression}
+
+finalanalyze1 <- read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#running the logit to determine the depth that natives stop growing 
+
+#this is making a new column that based on presence or absence of native seagrasses (so we have binary data to run the logit) if amount of native cover is zero, then 0 if not put one 
+finalanalyze1$pres <- ifelse(finalanalyze1$nativecover==0, '0', '1')
+
+#make our new column pres a factor so we can run the logit 
+finalanalyze1$pres<-as.factor(as.character(finalanalyze1$pres))
+
+#creating the model
+native01<-glm(pres ~depth, data=finalanalyze1, family="binomial")
+
+#check assumptions
+native01resid<-simulateResiduals(native01)
+plot(native01resid)
+
+#looks good press onward
+summary(native01)
+#significant negative effect of depth on presence of native seagrasses p=0.000465
+#AIC=58.326 z=0.60
+
+#Call:
+#glm(formula = pres ~ depth, family = "binomial", data = finalanalyze1)
+
+#Deviance Residuals: 
+#    Min       1Q   Median       3Q      Max  
+#-1.5680  -0.6124  -0.3090   0.8352   1.8239  
+
+#Coefficients:
+#            Estimate Std. Error z value Pr(>|z|)    
+#(Intercept)  1.16170    0.60103   1.933 0.053257 .  
+#depth       -0.19877    0.05679  -3.500 0.000465 ***
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#(Dispersion parameter for binomial family taken to be 1)
+
+#    Null deviance: 72.836  on 61  degrees of freedom
+#Residual deviance: 54.326  on 60  degrees of freedom
+#AIC: 58.326
+
+#Number of Fisher Scoring iterations: 5
+
+
+#now creating our simulated r squared 
+log.likelihoodNull <- native01$null.deviance/-2
+log.likelihoodResidual <- native01$deviance/-2
+PseudoR2 <- (log.likelihoodNull - log.likelihoodResidual) / log.likelihoodNull
+PseudoR2 #r squared is 0.2541301
+
+#need to be numberic to plot using geomsmooth, for some reason this is turning it to ones and twos, so i am going to remake the pres column 
+finalanalyze1$pres<-as.numeric(finalanalyze1$pres)
+
+#remake pres column
+finalanalyze1$pres1 <- ifelse(finalanalyze1$nativecover==0, '0', '1')
+finalanalyze1$pres1<-as.numeric(finalanalyze1$pres1)
+
+#plot the results 
+native<-ggplot(finalanalyze1, aes(x = depth, y = pres1)) +
+  geom_jitter(alpha = 0.4, width = 0, height = 0.01) +
+  geom_smooth(method = "glm", method.args = list(family=binomial),
+              color = "#CC79A7") +
+  labs(x = "Depth", y = "Native Seagrass Presence") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  geom_text(aes(x = 20, y = 0.75, label = "y = y= -0.19877x+1.161700
+\nPseudo R2=0.2541301"))
+
+native
+
+#gray shading is 95% confidence interval for the line
+```
+
+#need help looking at assumptions
+looking at the effect of depth on the presence of halophila 
+
+```{r Logit Halophila}
+
+finalanalyze1 <- read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#make a column that shows presence or absence of halophila 
+finalanalyze1$halpres <- ifelse(finalanalyze1$PCovHalophila==0, '0', '1')
+
+#make our new column pres a factor so we can run the logit 
+finalanalyze1$halpres<-as.factor(as.character(finalanalyze1$halpres))
+
+#creating the model
+hal01<-glm(halpres ~depth, data=finalanalyze1, family="binomial")
+
+#check assumptions
+
+hal01resid<-simulateResiduals(hal01)
+plot(hal01resid)
+
+#??
+summary(hal01)
+
+
+#Call:
+#glm(formula = halpres ~ depth, family = "binomial", data = finalanalyze1)
+
+#Deviance Residuals: 
+#    Min       1Q   Median       3Q      Max  
+#-2.6589   0.2676   0.3422   0.4681   0.6075  
+
+#Coefficients:
+#            Estimate Std. Error z value Pr(>|z|)  
+#(Intercept)  1.49296    0.79410   1.880   0.0601 .
+#depth        0.08464    0.06878   1.231   0.2185  
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#(Dispersion parameter for binomial family taken to be 1)
+
+#    Null deviance: 34.762  on 61  degrees of freedom
+#Residual deviance: 33.075  on 60  degrees of freedom
+#AIC: 37.075
+
+#Number of Fisher Scoring iterations: 5
+
+#now creating our simulated r squared 
+log.likelihoodNull <- hal01$null.deviance/-2
+log.likelihoodResidual <- hal01$deviance/-2
+PseudoR2 <- (log.likelihoodNull - log.likelihoodResidual) / log.likelihoodNull
+PseudoR2 #r squared is 0.04853213
+
+#need to be numberic to plot using geomsmooth, this doesnt work so remaking halpres column because when i try to make it numeric again it changes to 1 and 2
+finalanalyze1$halpres<-as.numeric(finalanalyze1$halpres)
+
+#remake column so it is numeric to plot
+finalanalyze1$halpres1 <- ifelse(finalanalyze1$PCovHalophila==0, '0', '1')
+finalanalyze1$halpres1<-as.numeric(finalanalyze1$halpres1)
+
+#plot
+
+halo<-ggplot(finalanalyze1, aes(x = depth, y = halpres1)) +
+  geom_jitter(alpha = 0.4, width = 0, height = 0.01) +
+  geom_smooth(method = "glm", method.args = list(family=binomial),
+              color = "#F0E442") +
+  labs(x = "Depth", y = "Halophila Presence") +
+  theme_bw() +
+  theme(legend.position = "none")+
+  geom_text(aes(x = 20, y = 0.75, label = "y = y= 0.084x+1.49
+\nPseudo R2=0.0485"))
+
+halo
+
+logits<-halo+native
+
+logits
+
+```
+
+
+```{r Summary Statistics}
+
+grass<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#halophila
+mean(grass$PCovHalophila)
+#51.14592
+sd(grass$PCovHalophila)
+#36.63191
+max(grass$PCovHalophila)
+#97.4
+
+#thalassia 
+mean(grass$PCovThalassia)
+#0.5854839
+sd(grass$PCovThalassia)
+#3.247286
+max(grass$PCovThalassia)
+#23
+
+#halodule 
+mean(grass$PCovHalodule)
+#0.5016129
+sd(grass$PCovHalodule)
+#2.756244
+max(grass$PCovHalodule)
+#20
+
+#syringodium 
+mean(grass$PCovSyringodium)
+#5.720968
+sd(grass$PCovSyringodium)
+# 15.16566
+max(grass$PCovSyringodium)
+#68
+
+#total natice cover
+mean(grass$nativecover)
+#6.808065
+sd(grass$nativecover)
+# 16.94623
+max(grass$nativecover)
+#68
+
+```
+
+Ok, so we decided that instead of using the linear analyses we are going to use a categorical test, to test for differences in info for the three categories, so we are going to look at
+
+1) Species Richness
+2) Simpsons Index of Diversity
+
+Across the three seagrass categories
+1. >15m
+2. <15m, 100% Halophila
+3. <15m, native present
+
+```{r Richness Anova}
+#csvs needed
+finalanalyze1 <- read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#libraries
+library(tidyverse)
+library(agricolae)#Tukey post hoc test
+
+#add our seagrass categories to the dataframe
+finalanalyze1<-finalanalyze1 %>% 
+  mutate(totalgrass= (finalanalyze1$PCovHalophila+
+                      finalanalyze1$PCovThalassia+
+                      finalanalyze1$PCovHalodule+
+                      finalanalyze1$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(finalanalyze1$PCovHalophila/totalgrass))
+
+##Nas were generated on three transects where there was no seagrass, because cannot divide by zero, Making the NAs 0
+finalanalyze1[is.na(finalanalyze1)] <- 0
+
+##Make the depth bin categories, we know that deeper than 15 meters there is no native seagrasses, and we want to separate the transects below 15 meters into two groups, ones that are 100% halophila, and ones that are not 100% halophila and contain native seagrasses, and then select for column that we need for further analysis
+finalanalyze1<- finalanalyze1%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ "deep",
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ "hal",
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ "native" ))%>%
+  select(Transect, dhcat, Species_Richness, simpsons)
+
+
+#Species Richness
+#visualize the data 
+
+Richness<-finalanalyze1%>%
+    ggplot(names=labels, aes(x=dhcat, y=Species_Richness, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)
+
+
+Richness
+
+#check anova assumptions
+
+#equal variance, bartlet test
+bartlett.test(Species_Richness~dhcat, finalanalyze1)
+
+#Bartlett test of homogeneity of variances
+
+#data:  Species_Richness by dhcat
+#Bartlett's K-squared = 2.9604, df = 2, p-value = 0.2276
+#we have equal variance, on to the next assumption
+
+#run the ANOVA to check the residuals
+RichnessANOVA <- aov(Species_Richness ~ dhcat, data = finalanalyze1)
+
+# then we can easily pull them out of the output
+aov_residuals <- residuals(RichnessANOVA)
+
+hist(aov_residuals)#looks pretty good
+
+shapiro.test(aov_residuals)
+#Shapiro-Wilk normality test
+
+#data:  aov_residuals
+#W = 0.94989, p-value = 0.01318
+#not normally distributed sad day, try transormation
+
+finalanalyze1$rsqrt<-(sqrt(finalanalyze1$Species_Richness))
+hist(finalanalyze1$Species_Richness)
+hist(finalanalyze1$rsqrt)
+
+#check assumpitons of transformed data
+bartlett.test(rsqrt~dhcat, finalanalyze1)
+
+#	Bartlett test of homogeneity of variances
+
+#data:  rsqrt by dhcat
+#Bartlett's K-squared = 0.75413, df = 2, p-value = 0.6859
+
+#run the ANOVA to check the residuals
+RichnessANOVAsr <- aov(rsqrt ~ dhcat, data = finalanalyze1)
+aov_residuals1 <- residuals(RichnessANOVAsr)
+hist(aov_residuals1)
+
+shapiro.test(aov_residuals1)
+
+#	Shapiro-Wilk normality test
+
+#data:  aov_residuals1
+#W = 0.97635, p-value = 0.2745
+#transformation worked!!! I can run an ANOVA!!!
+
+
+summary(RichnessANOVAsr)
+
+#            Df Sum Sq Mean Sq F value Pr(>F)  
+#dhcat        2  2.347  1.1734   4.324 0.0177 *
+#Residuals   59 16.011  0.2714                 
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Tukey <- HSD.test(RichnessANOVAsr, "dhcat")
+Tukey
+
+#$statistics
+#    MSerror Df     Mean      CV
+#  0.2713647 59 2.458175 21.1916
+
+#$parameters
+#   test name.t ntr StudentizedRange alpha
+#  Tukey  dhcat   3         3.400118  0.05
+
+#$means
+#          rsqrt       std  r      Min      Max      Q25      Q50      Q75
+#deep   2.633168 0.5395429 28 1.732051 4.000000 2.236068 2.645751 2.871320
+#hal    2.484874 0.5594027 15 1.732051 3.605551 2.118034 2.449490 2.828427
+#native 2.179213 0.4576268 19 1.414214 2.828427 1.732051 2.000000 2.547621
+
+#$comparison
+#NULL
+
+#$groups
+#          rsqrt groups
+#deep   2.633168      a
+#hal    2.484874     ab
+#native 2.179213      b
+
+#attr(,"class")
+#[1] "group"
+
+RichnessFinal<-finalanalyze1%>%
+    ggplot(names=labels, aes(x=dhcat, y=rsqrt, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab("Square Root of Species Richness ")+#no y axis lables
+  ggtitle("Species Richness")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n  Native Present"))+geom_text(aes(family="serif", fontface="plain"),x= "deep" , y=4.2, label="a")+#add first letter, family and fontface change font and remove bold
+  geom_text(aes(family="serif", fontface="plain"),x= "hal" , y=3.8, label="ab")+#add second letter
+  geom_text(aes(family="serif", fontface="plain"), x= "native" , y=3, label="b")+#add third letter 
+  theme(legend.position="none")+#removes legend 
+    ylim(1,4.5)#manually set y axis #removes legend 
+ 
+
+RichnessFinal
+
+```
+
+Now looking at the effect of categories on Simpsons index of diversity
+
+```{r Simpsons Anova}
+#csvs needed
+finalanalyze1 <- read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#libraries
+library(tidyverse)
+library(agricolae)#Tukey post hoc test
+
+#add our seagrass categories to the dataframe
+finalanalyze1<-finalanalyze1 %>% 
+  mutate(totalgrass= (finalanalyze1$PCovHalophila+
+                      finalanalyze1$PCovThalassia+
+                      finalanalyze1$PCovHalodule+
+                      finalanalyze1$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(finalanalyze1$PCovHalophila/totalgrass))
+
+##Nas were generated on three transects where there was no seagrass, because cannot divide by zero, Making the NAs 0
+finalanalyze1[is.na(finalanalyze1)] <- 0
+
+##Make the depth bin categories, we know that deeper than 15 meters there is no native seagrasses, and we want to separate the transects below 15 meters into two groups, ones that are 100% halophila, and ones that are not 100% halophila and contain native seagrasses, and then select for column that we need for further analysis
+finalanalyze1<- finalanalyze1%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ "deep",
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ "hal",
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ "native" ))%>%
+  select(Transect, dhcat, Species_Richness, simpsons)
+
+
+#simpsons
+#visualize the data 
+
+Simpsons<-finalanalyze1%>%
+    ggplot(names=labels, aes(x=dhcat, y=simpsons, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)
+
+
+Simpsons
+
+hist(finalanalyze1$simpsons)
+#data is skewed right, going to square transform
+
+finalanalyze1$simpsq<-((finalanalyze1$simpsons)^2)
+hist(finalanalyze1$simpsq)
+
+
+#check assumpitons of transformed data
+bartlett.test(simpsq~dhcat, finalanalyze1)
+
+#	Bartlett test of homogeneity of variances
+
+#data:  simpsq by dhcat
+#Bartlett's K-squared = 10.439, df = 2, p-value = 0.00541
+#not homogenous varicances, transfoming did not work going to run KW
+
+#tried transforming the data, unsuccessful
+kruskal.test(simpsons~dhcat, data=finalanalyze1)
+
+#Kruskal-Wallis rank sum test
+
+#data:  simpsons by dhcat
+#Kruskal-Wallis chi-squared = 1.2262, df = 2, p-value = 0.5417
+#not significantly different
+
+
+SimpsonsFinal<-finalanalyze1%>%
+    ggplot(names=labels, aes(x=dhcat, y=simpsons, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab("Simpsons Index of Diversity ")+#no y axis lables
+  ggtitle("Simpsons Index of Diversity")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n  Native Present"))
+ 
+SimpsonsFinal
+
+
+```
+
+Going to look at the linear model for this filtered by category, First filtered the data looking for sites that are shallower than 15m, and contain native seagrass, want to see if the trends we saw for all transects together are similar to when we split transects
+```{r Linear Regression}
+
+#csvs needed
+finalanalyze3 <- read.csv("Data/WeFixedItAnalyzeMe.csv")
+
+#libraries
+library(tidyverse)
+library(agricolae)#Tukey post hoc test
+
+#add our seagrass categories to the dataframe
+finalanalyze3<-finalanalyze3 %>% 
+  mutate(totalgrass= (finalanalyze3$PCovHalophila+
+                      finalanalyze3$PCovThalassia+
+                      finalanalyze3$PCovHalodule+
+                      finalanalyze3$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(finalanalyze3$PCovHalophila/totalgrass))
+
+##Nas were generated on three transects where there was no seagrass, because cannot divide by zero, Making the NAs 0
+finalanalyze3[is.na(finalanalyze3)] <- 0
+
+##Make the depth bin categories, we know that deeper than 15 meters there is no native seagrasses, and we want to separate the transects below 15 meters into two groups, ones that are 100% halophila, and ones that are not 100% halophila and contain native seagrasses, and then select for column that we need for further analysis
+
+# and then filter for native only, want to look at the imipact of depth, percent cover halophila and percent cover of native seagrass on only transects that include native seagrasses
+finalanalyze3<- finalanalyze3%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ "deep",
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ "hal",
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ "native" ))%>%
+  filter(dhcat=="native")
+
+#check our assumptions
+
+# visualize the data
+hist(finalanalyze3$simpsons)#skewed right
+
+hist((finalanalyze3$simpsons)^2)
+#better
+
+#creating a column with simpsons squared
+finalanalyze3$SQsimpsons<-(finalanalyze3$simpsons)^2
+
+#this is skewed right so we need to square it
+nativesimpsonreg<-lm((finalanalyze3$simpsons)^2~finalanalyze3$PCovHalophila+ finalanalyze3$nativecover+finalanalyze3$depth+finalanalyze3$PCovHalophila*finalanalyze3$depth)
+
+#check assumptions 
+plot(nativesimpsonreg)
+
+summary(nativesimpsonreg) 
+
+#Call:
+#lm(formula = (finalanalyze3$simpsons)^2 ~ finalanalyze3$PCovHalophila + 
+#    finalanalyze3$nativecover + finalanalyze3$depth + finalanalyze3$PCovHalophila * 
+#    finalanalyze3$depth)
+
+#Residuals:
+#     Min       1Q   Median       3Q      Max 
+#-0.31948 -0.24037 -0.01155  0.16205  0.55613 
+
+#Coefficients:
+#                                                  Estimate Std. Error t value Pr(>|t|)  
+#(Intercept)                                      0.7543576  0.2668692   2.827   0.0135 *
+#finalanalyze3$PCovHalophila                     -0.0062259  0.0070486  -0.883   0.3920  
+#finalanalyze3$nativecover                       -0.0056523  0.0026892  -2.102   0.0541 .
+#finalanalyze3$depth                             -0.0035268  0.0409903  -0.086   0.9327  
+#finalanalyze3$PCovHalophila:finalanalyze3$depth  0.0005845  0.0011974   0.488   0.6330  
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#Residual standard error: 0.2682 on 14 degrees of freedom
+#Multiple R-squared:  0.3176,	Adjusted R-squared:  0.1226 
+#F-statistic: 1.629 on 4 and 14 DF,  p-value: 0.2221
+
+#run another lm, 
+
+nativesimpsonreg1<-lm((finalanalyze3$simpsons)^2~finalanalyze3$PCovHalophila+ finalanalyze3$nativecover+finalanalyze3$depth)
+
+plot(nativesimpsonreg1)
+
+summary(nativesimpsonreg1)
+
+#Call:
+#lm(formula = (finalanalyze3$simpsons)^2 ~ finalanalyze3$PCovHalophila + 
+#    finalanalyze3$nativecover + finalanalyze3$depth)
+
+#Residuals:
+#     Min       1Q   Median       3Q      Max 
+#-0.30792 -0.25546  0.01661  0.14472  0.55361 
+
+#Coefficients:
+#                             Estimate Std. Error t value Pr(>|t|)   
+#(Intercept)                  0.657417   0.173683   3.785   0.0018 **
+#finalanalyze3$PCovHalophila -0.003206   0.003292  -0.974   0.3455   
+#finalanalyze3$nativecover   -0.005898   0.002574  -2.291   0.0368 * 
+#finalanalyze3$depth          0.014662   0.016642   0.881   0.3922   
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+#Residual standard error: 0.2613 on 15 degrees of freedom
+#Multiple R-squared:  0.306,	Adjusted R-squared:  0.1672 
+#F-statistic: 2.205 on 3 and 15 DF,  p-value: 0.1299
+
+
+#when we remove the interaction factor, we get a significant negative impact of native seagrass cover on simpisons diversity
+
+
+
+nativeshallow<-ggplot(finalanalyze3, aes(x = nativecover, y = SQsimpsons)) +
+  geom_jitter(alpha = 0.4, width = 0, height = 0.01) +
+  geom_smooth(method = "lm",
+              color = "#CC79A7") +
+  labs(x = "Native Cover", y = "Simpsons Index of Diversity Squared") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+nativeshallow
+```
+

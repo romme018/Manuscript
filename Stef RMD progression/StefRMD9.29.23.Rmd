@@ -1,0 +1,645 @@
+---
+title: "Community Analysis"
+author: "Stefanie Maxin"
+date: "2023-09-02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r Creating a csv with fish names and families for nMDS}
+##Load libraries##
+library(readr)
+library(tidyverse)
+
+##Read in csvs##
+Fish <- read_csv("Fish_Final.csv")
+Families<- read_csv("OrganizingFish.csv")
+Seagrass <- read_csv("WeFixedItAnalyzeMe.csv")
+
+##Remove unnecessary species and families## 
+Fish<-Fish%>%filter(!Common_Name=="unknown")
+Fish<-Fish%>%filter(!Common_Name=="Sand Diver")
+Fish<-Fish%>%filter(!Common_Name=="unknown Flounder")
+Fish<-Fish%>%filter(!Common_Name=="")
+Families<-Families%>%filter(!Families$`Common Names`=="unknown")
+
+##Rename the fish##
+Fish[Fish=="Sea Robin"]<-"Flying Gurnard"
+Fish[Fish=="Green Wrasse"]<-"Green Razorfish"
+
+##Reformat Families##
+Families<-Families[,-4:-7]
+Families <- Families[-(52:997),]
+
+##Rename Common Names##
+colnames(Fish)[5]="Common.Names"
+colnames(Families)[1]="Common.Names"
+
+##Combine the csvs fish and families##
+FishMerged <- merge(Fish, Families, by = "Common.Names", all.y = TRUE)
+
+##Fix the Rozy Razorfish names (it was spelled wrong until now)##
+FishMerged[FishMerged=="Rosy Razerfish"]<-"Rosy Razorfish"
+
+##Write the csv##
+write.csv(FishMerged, "C:/Users/stefa/Documents/Capstone Project/Data Analysis/FishMerged.csv")
+```
+
+```{r Creating a csv for nMDS with fish species and halophila cover}
+
+##Creating a new column for transect##
+FishMerged$Transect = paste(FishMerged$Site_Number,FishMerged$Depth_Bin, sep= " ")
+
+##Making a new csv called AllMerged with fish and seagrass data##
+AllMerged <- merge(FishMerged, Seagrass, by = "Transect", all.y = TRUE)
+AllMerged<-AllMerged[,-3:-5]
+AllMerged<-AllMerged[,-5:-8]
+AllMerged<-AllMerged[,-5]
+AllMerged<-AllMerged[,-7]
+
+##Write the csv##
+write.csv(AllMerged, "C:/Users/stefa/Documents/Capstone Project/Data Analysis/AllMerged.csv")
+```
+
+```{r Running the nMDS}
+##load libraries##
+library(readr)
+library(vegan)
+library(DHARMa)
+library(tidyverse)
+
+##read in the data##
+AllMerged <- read_csv("AllMerged.csv")
+
+##Family needs to be a factor
+AllMerged$Family<-as.factor(AllMerged$Family)
+
+##making a dataframe
+nMDSframe<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Family)
+
+#making a dataframe with categories
+pcov<-read.csv("WeFixedItAnalyzeMe.csv")
+
+##Making categories for different percents of seagrass based on the Mumby et al paper##
+pcov$cat <- case_when(pcov$PCovHalophila<30 ~ "1",pcov$PCovHalophila>70 ~ "3", pcov$PCovHalophila==30:70 ~ "2" ) 
+
+#makes intermediate NA change to 2 
+pcov[is.na(pcov)] <- "2" 
+pcovhal<-pcov%>%select(Transect, cat)
+
+##Making a dataframe for the nMDS
+nMDSframe <- nMDSframe %>%
+  pivot_wider(names_from = Family , values_from = n)
+
+##Turning NAs to 0s
+nMDSframe[is.na(nMDSframe)] <- 0 
+
+
+##Merging the two dataframes to make an nMDS
+nMDSframe = merge(nMDSframe, pcovhal, by = "Transect") 
+
+##removing unecessary column
+nMDSframe <- nMDSframe[,-1]
+
+##Make the category as.numeric
+nMDSframe$cat<-as.numeric(nMDSframe$cat)
+
+##nMDS dataframe without the category
+nMDSframe1 <- nMDSframe[,-20]
+
+##Run the nMDS##
+family_NMDS <- metaMDS(nMDSframe1, k = 2, trymax = 100) 
+family_NMDS
+#Stress= 0.2339253
+
+##Stress Plot
+stressplot(family_NMDS)
+#R^2=0.945
+
+##Basic Plot
+plot(family_NMDS)
+
+##Making a new dataframe with the data from the nMDS##
+fish_family <- as.data.frame(family_NMDS$species)
+fish_family$sp <- rownames(family_NMDS$species)
+
+##Making a dataframe with the categories
+  trans.cont <- as.data.frame(family_NMDS$points)
+  trans.cont$cat <- nMDSframe[,20] 
+ 
+##Now let's plot
+#ggplot() + geom_text(data = trans.cont, aes(x = MDS1, y = MDS2, label = cat)) + geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp),  color = "red",  position = position_jitter(width = 0.2, height = 0.2)) +  theme_bw()
+
+##ggplot(trans.cont) +
+  #geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(cat)), size = 5) +
+ # theme_classic() +
+  #labs(color = "cat") +
+#  guides(color = guide_legend(nrow = 1)) +
+  #theme(panel.border = element_rect(fill = NA),
+     #   legend.position = "bottom") 
+
+##Making new dataframes of the categories associated with the nMDS points
+sparse <- trans.cont[trans.cont$cat == 1, ][chull(trans.cont[trans.cont$cat == 1, c("MDS1", "MDS2")]), ]
+medium <- trans.cont[trans.cont$cat == 2, ][chull(trans.cont[trans.cont$cat == 2, c("MDS1", "MDS2")]), ]
+dense <- trans.cont[trans.cont$cat == 3, ][chull(trans.cont[trans.cont$cat == 3, c("MDS1", "MDS2")]), ]
+
+##Binding the category dataframes together to make a new dataframe##
+ seagrassdata <- rbind(sparse, medium, dense)
+ 
+##Now making the ggplot##  
+ggplot(trans.cont) +
+  geom_polygon(data = seagrassdata, aes(x = MDS1, y = MDS2, group = as.factor(cat), fill = as.factor(cat)), alpha = 0.5) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(cat)), size = 3) + 
+  theme_classic() +
+  labs(color = "cat", fill = "cat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Seagrass Density", labels = c("Sparse", "Medium", "Dense"),values = c("#3B9AB2","#EBCC2A","#F21A00"))+scale_color_manual(name = "Seagrass Density", labels = c("Sparse", "Medium", "Dense"), values = c("#3B9AB2","#EBCC2A","#F21A00"))  
+  
+```
+
+```{r New polygons for pcovhalophila/total}
+##Load libraries##
+library(readr)
+library(vegan)
+library(DHARMa)
+library(tidyverse)
+
+##Read in dataframe##
+pcov<-read.csv("WeFixedItAnalyzeMe.csv")
+
+#Add new column for % halophila/ % total seagrass cover#
+pcov<-pcov %>% 
+  mutate(totalgrass= (pcov$PCovHalophila+pcov$PCovThalassia+pcov$PCovHalodule+pcov$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(pcov$PCovHalophila/totalgrass))
+
+##Making the NAs 0
+pcov[is.na(pcov)] <- 0 
+
+##Making the categories of greater than or less than 100% Halophila
+pcov$halcat <- case_when(pcov$PerHalTotal<1.0 ~ "1", pcov$PerHalTotal==1.0 ~ "2")
+
+##Reading in the fish data
+AllMerged <- read_csv("AllMerged.csv")
+
+##Making Family a factor##
+AllMerged$Family<-as.factor(AllMerged$Family)
+
+##making a dataframe
+phalnMDSframe<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Family)
+
+
+phalnMDSframe <- phalnMDSframe %>%
+  pivot_wider(names_from = Family , values_from = n)
+
+##Turning NAs to 0s
+phalnMDSframe[is.na(phalnMDSframe)] <- 0 
+
+
+##Merging the two dataframes to make an nMDS
+phalnMDSframe = merge(phalnMDSframe, pcov, by = "Transect") 
+
+##Removing unnessessary columns##
+phalnMDSframe <- phalnMDSframe[,-21:-37]
+phalnMDSframe <- phalnMDSframe[,-1]
+
+##dataframe from the nMDS
+fish_family <- as.data.frame(family_NMDS$species)
+fish_family$sp <- rownames(family_NMDS$species)
+
+##making a new dataframe for the % Halophila
+  trans.cont.hal <- as.data.frame(family_NMDS$points)
+  trans.cont.hal$halcat <- phalnMDSframe[,20] 
+
+##Basic Plots
+#ggplot() + geom_text(data = trans.cont.hal, aes(x = MDS1, y = MDS2, label = halcat)) + geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp),  color = "red",  position = position_jitter(width = 0.2, height = 0.2)) +  theme_bw()
+
+  
+#ggplot(trans.cont.hal) +
+  #geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(halcat)), size = 5) +
+ # theme_classic() +
+  #labs(color = "cat") +
+ # guides(color = guide_legend(nrow = 1)) +
+  #theme(panel.border = element_rect(fill = NA),
+        #legend.position = "bottom") 
+
+##Making category dataframes for the greater/less than 100%
+less.hal <- trans.cont.hal[trans.cont.hal$halcat == 1, ][chull(trans.cont.hal[trans.cont.hal$halcat == 1, c("MDS1", "MDS2")]), ]
+all.hal <- trans.cont.hal[trans.cont.hal$halcat == 2, ][chull(trans.cont.hal[trans.cont.hal$halcat == 2, c("MDS1", "MDS2")]), ]
+
+##Bind together to make a dataframe
+haldata <- rbind(less.hal, all.hal)
+ 
+##Plot the hulls## 
+ggplot(trans.cont.hal) +
+  geom_polygon(data = haldata, aes(x = MDS1, y = MDS2, group = as.factor(halcat), fill = as.factor(halcat)), alpha = 0.5) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(halcat)), size = 3) + 
+  theme_classic() +
+  labs(color = "halcat", fill = "halcat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Halophila Density", labels = c("Less than 100% Halophila", "100% Halophila"),values = c("#3B9AB2","#EBCC2A"))+scale_color_manual(name = "Halophila Density", labels = c("Less than 100% Halophila", "100% Halophila"), values = c("#3B9AB2","#EBCC2A"))  
+```
+
+```{r Depth hulls for the fish nMDS}
+
+##Library##
+library(readr)
+library(vegan)
+library(DHARMa)
+library(tidyverse)
+
+##Load the data##
+depth<-read.csv("WeFixedItAnalyzeMe.csv")
+
+##Make the depth bin categories##
+depth$dcat <- case_when(depth$depth<15.0 ~ "1", depth$depth>15.0 ~ "2")
+
+##Read in the fish data##
+AllMerged <- read_csv("AllMerged.csv")
+
+##making a dataframe
+AllMerged$Family<-as.factor(AllMerged$Family)
+
+##Make a new dataframe##
+dnMDSframe<-AllMerged %>%
+  group_by(Transect)%>%
+  count(Family)
+
+dnMDSframe <- dnMDSframe %>%
+  pivot_wider(names_from = Family , values_from = n)
+
+##Turning NAs to 0s
+dnMDSframe[is.na(dnMDSframe)] <- 0 
+
+
+##Merging the two dataframes to make an nMDS
+dnMDSframe = merge(dnMDSframe, depth, by = "Transect") 
+
+##Removing unnecessary columns
+dnMDSframe <- dnMDSframe[,-21:-35]
+dnMDSframe <- dnMDSframe[,-1]
+
+##Making a new dataframe for depth
+ trans.cont.d <- as.data.frame(family_NMDS$points)
+  trans.cont.d$dcat <- dnMDSframe[,20] 
+
+##Making depth category dataframes
+less.than.15 <- trans.cont.d[trans.cont.d$dcat == 1, ][chull(trans.cont.d[trans.cont.d$dcat == 1, c("MDS1", "MDS2")]), ]
+more.than.15 <- trans.cont.d[trans.cont.d$dcat == 2, ][chull(trans.cont.d[trans.cont.d$dcat == 2, c("MDS1", "MDS2")]), ]
+
+##Bind the dataframes together 
+depthdata <- rbind(less.than.15, more.than.15)
+ 
+##Plot the hulls##
+ggplot(trans.cont.d) +
+  geom_polygon(data = depthdata, aes(x = MDS1, y = MDS2, group = as.factor(dcat), fill = as.factor(dcat)), alpha = 0.5) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(dcat)), size = 3) + 
+  theme_classic() +
+  labs(color = "dcat", fill = "dcat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Depth", labels = c("Less than 15m", "Greater than 15m"),values = c("#3B9AB2","#EBCC2A"))+scale_color_manual(name = "Depth", labels = c("Less than 15m ", "Greater than 15m"), values = c("#3B9AB2","#EBCC2A"))  
+  
+
+```
+
+```{r 95% confidence}
+
+##Seeing how it looks with ordiplot
+  ##Making the plot
+ordiplot(family_NMDS, type = "n") 
+  ##Putting the transects down
+orditorp(family_NMDS, display = "sites", cex = 0.75, air = 0.01)
+  ##Putting on the fish family names
+orditorp(family_NMDS, display = "species", col = "red", air = 0.01)
+  ##Drawing the convex hulls
+#ordihull(family_NMDS, groups = trans.cont.d$dcat,
+         #draw = "polygon", col = "grey90", label = TRUE)
+
+  ##Drawing the confidence ellipses##
+depthord<-ordiellipse(family_NMDS, trans.cont.d$dcat, conf = 0.95, label = TRUE)
+
+##calling the hidden vegan function
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+#convert depth to a factor
+trans.cont.d$dcat <- factor(trans.cont.d$dcat)
+
+##Making a new dataframe to make the confidence ellipses##
+depth_df_ell <- data.frame()
+for(g in levels(trans.cont.d$dcat)){
+  depth_df_ell <- rbind(depth_df_ell, cbind(as.data.frame(with(trans.cont.d[trans.cont.d$dcat==g,],
+                                                   veganCovEllipse(depthord[[g]]$cov,depthord[[g]]$center,depthord[[g]]$scale)))
+                                ,zone=g))
+}
+
+##Plot##
+ggplot(trans.cont.d) +
+  geom_point(aes(x = MDS1, y = MDS2, color = as.factor(dcat)), size = 3) + geom_path(data = depth_df_ell, aes(x = NMDS1, y = NMDS2, colour = zone), linewidth=1, linetype=2)+
+  theme_classic() +
+  labs(color = "dcat", fill = "dcat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Depth", labels = c("Less than 15m", "Greater than 15m"),values = c("#3B9AB2","#EBCC2A"))+scale_color_manual(name = "Depth", labels = c("Less than 15m ", "Greater than 15m"), values = c("#3B9AB2","#EBCC2A"))  
+
+
+##Making new ellipses for Halophila
+Halord <- ordiellipse(family_NMDS, trans.cont.hal$halcat, conf = 0.95, label = TRUE)
+
+##Calling the hidden vegan function##
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+#convert cat to a factor
+trans.cont.hal$halcat <- factor(trans.cont.hal$halcat)
+
+##Making a new dataframe for the Halophila ellipses
+Hal_df_ell <- data.frame()
+for(g in levels(trans.cont.hal$halcat)){
+  Hal_df_ell <- rbind(Hal_df_ell, cbind(as.data.frame(with(trans.cont.hal[trans.cont.hal$halcat==g,],
+                                                               veganCovEllipse(Halord[[g]]$cov,Halord[[g]]$center,Halord[[g]]$scale)))
+                                            ,zone=g))
+}
+
+##Plot
+ggplot(trans.cont.hal) +
+  geom_point(aes(x = MDS1, y = MDS2, color = as.factor(halcat)), size = 3) + geom_path(data = Hal_df_ell, aes(x = NMDS1, y = NMDS2, group=zone, colour=zone), linetype=1, linewidth=2)+
+  theme_classic() +
+  labs(color = "cat", fill = "cat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+  theme(panel.border = element_rect(fill = NA),
+        legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Depth", labels = c("Less 100% Halophila ", "100% Halophila"),values = c("#3B9AB2","#EBCC2A"))+scale_color_manual(name = "Depth", labels = c("Less 100% Halophila ", "100% Halophila"), values = c("#3B9AB2","#EBCC2A")) 
+
+```
+
+
+```{r permanova}
+library(readr)
+library(vegan)
+library(DHARMa)
+library(tidyverse)
+
+#DEPTH 1-WAY PERMANOVA#
+ ##Making the dataframe##
+  
+  ##Load the data##
+  depth<-read.csv("data/WeFixedItAnalyzeMe.csv")
+
+  ##Make the depth bin categories##
+  depth$dcat <- case_when(depth$depth<15.0 ~ "1", depth$depth>15.0 ~ "2")
+
+  ##Read in the fish data##
+  AllMerged <- read_csv("AllMerged.csv")
+
+  ##Making family a factor##
+  AllMerged$Family<-as.factor(AllMerged$Family)
+
+  ##Make a new dataframe##
+  dnMDSframe<-AllMerged %>%
+   group_by(Transect)%>%
+    count(Family)
+
+  ##Pivot Wider##
+  dnMDSframe <- dnMDSframe %>%
+   pivot_wider(names_from = Family , values_from = n)
+
+  ##Turning NAs to 0s##
+  dnMDSframe[is.na(dnMDSframe)] <- 0 
+
+  ##Merging the two dataframes##
+  dnMDSframe = merge(dnMDSframe, depth, by = "Transect") 
+
+  ##Getting rid of the extra seagrass info##
+  dnMDSframe <- dnMDSframe[,-21:-35]
+  
+  ##Removing the transect column
+  Hal_dissim_bray<- dnMDSframe[,-1]
+
+ ##Making the matrix and running the PERMANOVA##
+
+    ##Making the dissim matrix## (using columns 1:19 to make dissimilatrity matrix, we dont want to include the cat column for this)
+    hal_bray <- vegdist(Hal_dissim_bray[,1:19], method = "bray")
+    hal_bray
+
+    ##running the depth 1-Way PERMANOVA##
+    hal_Strata <- adonis2(hal_bray ~ Hal_dissim_bray$dcat, data = Hal_dissim_bray[,1:19])
+    hal_Strata
+
+  ##Results##        
+  #                     Df SumOfSqs     R2      F Pr(>F)    
+  #Hal_dissim_bray$dcat  1   2.2116 0.1264 8.6815  0.001 ***
+  #Residual             60  15.2851 0.8736                  
+  #Total                61  17.4967 1.0000 
+
+  ###r^2=0.12669, Depth explains 12.64% of the variation in fish communities and is highly      significant (p = 0.001).###    
+    
+#next thing is to determine the effect size, which is the magnitude of the difference between the two groups, two depths,( how the degrees of freedom has an impact on how well the model explains the variance) this is important when you have two or more variables we only have one, we ran it anways woot 
+
+  ##Omega square function##
+    adonis_OmegaSq <- function(adonisOutput, partial = TRUE){
+    if(!(is(adonisOutput, "adonis") || is(adonisOutput, "anova.cca")))
+        stop("Input should be an adonis object")
+    if (is(adonisOutput, "anova.cca")) {
+        aov_tab <- adonisOutput
+        aov_tab$MeanSqs <- aov_tab$SumOfSqs / aov_tab$Df
+        aov_tab$MeanSqs[length(aov_tab$Df)] <- NA
+    } else {
+        aov_tab <- adonisOutput$aov.tab
+    }
+    heading <- attr(aov_tab, "heading")
+    MS_res <- aov_tab[pmatch("Residual", rownames(aov_tab)), "MeanSqs"]
+    SS_tot <- aov_tab[rownames(aov_tab) == "Total", "SumsOfSqs"]
+    N <- aov_tab[rownames(aov_tab) == "Total", "Df"] + 1
+    if(partial){
+        omega <- apply(aov_tab, 1, function(x) (x["Df"]*(x["MeanSqs"]-MS_res))/(x["Df"]*x["MeanSqs"]+(N-x["Df"])*MS_res))
+        aov_tab$parOmegaSq <- c(omega[1:(length(omega)-2)], NA, NA)
+    } else {
+        omega <- apply(aov_tab, 1, function(x) (x["SumsOfSqs"]-x["Df"]*MS_res)/(SS_tot+MS_res))
+        aov_tab$OmegaSq <- c(omega[1:(length(omega)-2)], NA, NA)
+    }
+    if (is(adonisOutput, "adonis"))
+        cn_order <- c("Df", "SumsOfSqs", "MeanSqs", "F.Model", "R2",
+                      if (partial) "parOmegaSq" else "OmegaSq", "Pr(>F)")
+    else
+        cn_order <- c("Df", "SumOfSqs", "F", if (partial) "parOmegaSq" else "OmegaSq",
+                      "Pr(>F)")
+    aov_tab <- aov_tab[, cn_order]
+    attr(aov_tab, "names") <- cn_order
+    attr(aov_tab, "heading") <- heading
+    if (is(adonisOutput, "adonis"))
+        adonisOutput$aov.tab <- aov_tab
+    else
+        adonisOutput <- aov_tab
+    return(adonisOutput)
+}
+
+    ##Calculate omega squared values##
+adonis_OmegaSq(hal_Strata, partial = TRUE)
+
+    ##Results##
+                          # Df SumOfSqs      F parOmegaSq Pr(>F)    
+      #Hal_dissim_bray$dcat  1   2.2116 8.6815    0.11024  0.001 ***
+      #Residual             60  15.2851                             
+      #Total                61  17.4967 
+
+
+#the omega squared is what we pull out of these results essentailly a correct r2 0.11053
+
+  ##Denisty Plot##
+  densityplot(permustats(hal_Strata))
+#we dont know what this is for??? Marilyn??  
+  
+  
+
+#%HALOPHILA 1-WAY PERMANOVA#
+ ##Making the dataframe##
+  
+    ##Read in dataframe##
+    pcov<-read.csv("data/WeFixedItAnalyzeMe.csv")
+
+    ##Add new column for % halophila/ % total seagrass cover##
+    pcov<-pcov %>% 
+    mutate(totalgrass= (pcov$PCovHalophila+pcov$PCovThalassia+pcov$PCovHalodule+pcov$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(pcov$PCovHalophila/totalgrass))
+
+    ##Making the NAs 0##
+    pcov[is.na(pcov)] <- 0 
+
+    ##Making the categories of greater than or less than 100% Halophila##
+    pcov$halcat <- case_when(pcov$PerHalTotal<1.0 ~ "1", pcov$PerHalTotal==1.0 ~ "2")
+
+    ##Reading in the fish data##
+    AllMerged <- read_csv("AllMerged.csv")
+
+    ##Making Family a factor##
+    AllMerged$Family<-as.factor(AllMerged$Family)
+
+    ##making a dataframe
+    phalnMDSframe<-AllMerged %>%
+     group_by(Transect)%>%
+      count(Family)
+
+    ##Pivot Wider##
+    phalnMDSframe <- phalnMDSframe %>%
+    pivot_wider(names_from = Family , values_from = n)
+
+    ##Turning NAs to 0s##
+    phalnMDSframe[is.na(phalnMDSframe)] <- 0 
+
+    ##Merging the two dataframes##
+    phalnMDSframe = merge(phalnMDSframe, pcov, by = "Transect") 
+
+    ##Removing unnecessary columns##
+    phalnMDSframe <- phalnMDSframe[,-21:-37]
+    
+    ##Removing the transect column
+    p_Hal_dissim_bray <- phalnMDSframe[,-1]
+  
+##Making the matrix and running the PERMANOVA##
+
+    ##Making the dissim matrix##
+    p_hal_bray <- vegdist(p_Hal_dissim_bray[,1:19], method = "bray")
+    p_hal_bray
+
+    ##running the depth 1-Way PERMANOVA##
+    p_hal_Strata <- adonis2(p_hal_bray ~ p_Hal_dissim_bray$halcat, data = p_Hal_dissim_bray[,1:19])
+    p_hal_Strata 
+      
+      ##Results##
+                        # Df SumOfSqs      R2     F Pr(>F)    
+#p_Hal_dissim_bray$halcat  1   1.5291 0.08739 5.7457  0.001 ***
+#Residual                 60  15.9677 0.91261                  
+#Total                    61  17.4967 1.00000   
+      
+      ##The percent cover of Halophila explains 8.7% of the variation in fish       communities and is highly significant (p= 0.001)
+    
+    
+    ##Calculate omega squared values##
+    adonis_OmegaSq(p_hal_Strata, partial = TRUE)
+    
+      ##Results##
+                         #Df SumOfSqs     F parOmegaSq Pr(>F)    
+#p_Hal_dissim_bray$halcat  1   1.5291 5.7457   0.071101  0.001 ***
+#Residual                 60  15.9677                             
+#Total                    61  17.4967    
+    
+```
+
+```{r SIMPER}
+
+#DEPTH SIMPER#
+
+  ##Run the depth SIMPER##
+  depth_simper <- simper(Hal_dissim_bray[,1:19], permutations = 999, group = (Hal_dissim_bray$dcat))
+  summary(depth_simper)
+
+  #Results#
+  #                average      sd   ratio     ava     avb cumsum     p    
+  #Labridae        0.17946 0.17514 1.02470 9.64700 1.28600  0.229 0.423    
+  #Lutjanidae      0.15881 0.16856 0.94210 0.23500 8.67900  0.432 0.001 ***
+  #Gobiidae        0.13170 0.12937 1.01800 3.29400 5.71400  0.600 0.309    
+  #Serranidae      0.10154 0.08827 1.15030 1.58800 4.75000  0.730 0.002 ** 
+  #Scaridae        0.07461 0.09837 0.75850 2.79400 1.60700  0.825 0.979    
+  #Labrisomidae    0.03603 0.04811 0.74910 0.26500 1.39300  0.871 0.004 ** 
+  #Carangidae      0.02827 0.11551 0.24470 0.00000 2.50000  0.907 0.010 ** 
+  #Monacanthidae   0.02144 0.02621 0.81790 0.50000 0.67900  0.935 0.841    
+  #Pomacentridae   0.01522 0.03899 0.39020 0.82400 0.10700  0.954 0.998    
+  #Tetraodontidae  0.01300 0.02985 0.43560 0.32400 0.17900  0.971 0.964    
+  #Clinidae        0.00643 0.03495 0.18390 0.00000 0.25000  0.979 0.031 *  
+  #Acanthuridae    0.00374 0.01250 0.29880 0.20600 0.07100  0.984 0.901    
+  #Haemulidae      0.00337 0.01438 0.23410 0.02900 0.14300  0.988 0.241    
+  #Syngnathidae    0.00260 0.01302 0.19990 0.08800 0.00000  0.992 0.987    
+  #Opistognathidae 0.00198 0.01173 0.16850 0.00000 0.03600  0.994 0.021 *  
+  #Aulostomidae    0.00164 0.00674 0.24360 0.02900 0.03600  0.996 0.749    
+  #Chaetodontidae  0.00142 0.00971 0.14610 0.02900 0.00000  0.998 0.974    
+  #Holocentridae   0.00091 0.00575 0.15920 0.02900 0.00000  0.999 0.973    
+  #Dactylopteridae 0.00070 0.00377 0.18660 0.00000 0.03600  1.000 0.026 * 
+  
+  # so these numbers are from the cumsum column, the numbers add up to 100, and are cumulative, so we subtract one from the ones before to determine the amount each individual family contributes 
+
+    ## Fish in the family Lutjanidae (snappers) account for 20.3% of the          dissimilarity between the two depth categories (p=0.001), fish in the         family Serranidae (groupers) account for 13.0% of the dissimilarity           between the two depth categories (p=0.002), fish in the family                Labrisomidae (blennies) account for 4.6% of the dissimilarity between the     two depth categories (p=0.004), and fish in the family Carangidae (jacks)     account for 3.6% of the dissimilarity between the two depth categories        (p=0.010). ##
+
+#%HALOPHILA SIMPER#
+
+  ##Run the halophila SIMPER##
+  hal_simper <- simper(p_Hal_dissim_bray[,1:19], permutations = 999, group = (p_Hal_dissim_bray$halcat))
+  summary(hal_simper)
+  
+  ##Results##
+  
+              #average      sd   ratio     ava     avb cumsum     p   
+  #Labridae        0.21146 0.19311 1.09510 8.45000 4.64300  0.277 0.007 **
+  #Gobiidae        0.13404 0.13065 1.02590 1.55000 5.73800  0.452 0.288   
+  #Lutjanidae      0.11636 0.15988 0.72780 0.05000 5.95200  0.604 0.778   
+  #Serranidae      0.09146 0.08758 1.04440 1.60000 3.69000  0.724 0.482   
+  #Scaridae        0.08399 0.10467 0.80240 2.55000 2.11900  0.834 0.140   
+  #Labrisomidae    0.03070 0.04533 0.67710 0.20000 1.04800  0.874 0.659   
+  #Monacanthidae   0.02217 0.02862 0.77440 0.25000 0.73800  0.903 0.365   
+  #Carangidae      0.01952 0.09778 0.19960 0.00000 1.66700  0.928 0.664   
+  #Pomacentridae   0.01759 0.04421 0.39780 0.50000 0.50000  0.951 0.388   
+  #Tetraodontidae  0.01696 0.03726 0.45510 0.45000 0.16700  0.974 0.099 . 
+  #Clinidae        0.00452 0.02985 0.15160 0.00000 0.16700  0.980 0.326   
+  #Acanthuridae    0.00328 0.01241 0.26440 0.00000 0.21400  0.984 0.706   
+  #Haemulidae      0.00323 0.01329 0.24280 0.05000 0.09500  0.988 0.331   
+  #Syngnathidae    0.00271 0.01477 0.18330 0.00000 0.07100  0.992 0.532   
+  #Aulostomidae    0.00196 0.00759 0.25870 0.05000 0.02400  0.994 0.328   
+  #Chaetodontidae  0.00166 0.01208 0.13710 0.00000 0.02400  0.996 0.345   
+  #Opistognathidae 0.00141 0.00999 0.14120 0.00000 0.02400  0.998 0.345   
+  #Holocentridae   0.00095 0.00645 0.14780 0.00000 0.02400  0.999 0.341   
+  #Dactylopteridae 0.00049 0.00321 0.15310 0.00000 0.02400  1.000 0.321
+  
+    ##Fish in the family Labridae (aka wrasses) account for 27.7% of the   dissimilarity between the two percent Halophila categories (p=0.007).##  
+  
+```
+

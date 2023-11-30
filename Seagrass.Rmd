@@ -1,0 +1,195 @@
+---
+title: "Seagrass NMDS"
+author: "Kaitlin Rommelfanger"
+date: "2023-09-29"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+color by year, in the nMDS, we dont know about permanova , look at it by year, a lot of pairwise tests because a lot of years
+
+```{r Seagrass}
+library(tidyverse)
+library(vegan)
+
+seagrass<-read.csv("Seagrass Stuff/Seagrass Data/Seagrass Data.csv")
+
+#there is a blank in 2015 Transect 11, quadrat 10, nothing is recorded for S. filliforme, we replaced it with a zero, likely non of this species observed in this quadrat
+seagrass[is.na(seagrass)] <- 0 
+
+#calculate the average percent cover of each seagrass for each transect
+avggrass<-seagrass%>%group_by(Year, Transect)%>%
+  summarise(Thalassia=mean(T.testudinum), 
+            Halophila=mean(Halophilastipulacae), 
+            Halodule=mean(H.wrightii), 
+            Syringodium=mean(S.filiforme))
+
+#make nMDS frame
+
+GnMDS<-avggrass%>%select(Thalassia,Halophila,Halodule,Syringodium)
+# r decided to keep year even though i said no so were removing it, jerk
+#I think this is because the dataframe is grouped, try and figure out how to ungroup it when I have internet
+
+GnMDS<-GnMDS[,-1]
+
+
+#now we run the nMDS, initally got an error too many zeros to use bray distance so we ran using euclidian
+grass_NMDS <- metaMDS(GnMDS, k = 2, trymax = 100, distance = "euclidian" ) 
+
+grass_NMDS
+
+#Stress:     0.06135058
+
+stressplot(grass_NMDS)
+#non metric fit r2=0.996, linear fit r2=0.987
+
+##Basic Plot
+plot(grass_NMDS)
+
+##pulling the species locations out of the NMDS (x and y)
+grass_loc <- as.data.frame(grass_NMDS$species)
+
+# this line is pulling the species names and linking them to thier location
+grass_loc$sp <- rownames(grass_NMDS$species)
+
+#this is pulling the points for each individual transect out of the nmds
+  trans_loc <- as.data.frame(grass_NMDS$points)
+  
+#we need a dataframe to pull the years from, so we can link them to transect locations 
+yearframe<-avggrass%>%select(Thalassia,Halophila,Halodule,Syringodium, Year)
+
+#we are pulling the year out of NMDS frame 1 that we made earlier so we can make the polygons for year, and color by year, this doesnt work for some reason 
+
+trans_loc$Year <- yearframe[,5]
+
+#this is where a problem happens, merp, year gets added weird 
+  
+#plotting the species locations and transect category locations, labeled by category and species   
+ggplot() + geom_text(data = trans_loc, aes(x = MDS1, y = MDS2, label = Year$Year)) + geom_text(data = grass_loc, aes(x = MDS1, y = MDS2, label = sp),  color = "red",  position = position_jitter(width = 0.2, height = 0.2)) +  theme_bw()  
+
+#this is coloring the plot by year
+ ggplot(trans_loc) +
+  geom_text(data = grass_loc, aes(x = MDS1, y = MDS2, label = sp)) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(Year$Year)), size = 3) +
+  theme_classic() +
+  labs(color = "year$Year") +
+  guides(color = guide_legend(nrow = 1)) +
+  theme(panel.border = element_rect(fill = NA),
+        legend.position = "bottom")
+
+##need to keep this code because you cant pull the points in the next line unless if this ordiplot exists  
+ordiplot(grass_NMDS, type = "none") 
+
+#this is storing the info to make the 95% confidence intervals as an object
+
+#we are running into an issue with the the year column in trans loc, need to rename it it thinks it is a separate df within the df for some reason
+
+
+grassord<-ordiellipse(grass_NMDS, trans_loc$year, conf = 0.95, label = TRUE)
+
+#hidden vegan function that calculates ellipses
+veganCovEllipse<-function (cov, center = c(0, 0), scale = 1, npoints = 100) 
+{
+  theta <- (0:npoints) * 2 * pi/npoints
+  Circle <- cbind(cos(theta), sin(theta))
+  t(center + scale * t(Circle %*% chol(cov)))
+}
+
+#convert zone to a factor
+trans.cont.depth$cat <- factor(trans.cont.depth$cat)
+
+#create a dataframe of points that will draw the ellipses
+depth_df_ell <- data.frame()
+for(g in levels(trans.cont.depth$cat)){
+  depth_df_ell <- rbind(depth_df_ell, cbind(as.data.frame(with(trans.cont.depth[trans.cont.depth$cat==g,],
+                                                   veganCovEllipse(depthord[[g]]$cov,depthord[[g]]$center,depthord[[g]]$scale)))
+                                ,zone=g))
+}
+
+#plot
+ggplot(trans.cont.depth) +
+  geom_point(aes(x = MDS1, y = MDS2, color = as.factor(cat)), size = 3) + geom_path(data = depth_df_ell, aes(x = NMDS1, y = NMDS2, group = zone))+
+  theme_classic() +
+  labs(color = "dcat", fill = "dcat") +
+  guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+theme(panel.border = element_rect(fill = NA),
+legend.position = "bottom")+ geom_text(data = fish_family, aes(x = MDS1, y = MDS2, label = sp), alpha = 0.3)+scale_fill_manual(name = "Depth", labels = c("Less than 15m", "Greater than 15m"),values = c("#3B9AB2","#EBCC2A"))+scale_color_manual(name = "Depth", labels = c("Less than 15m ", "Greater than 15m"), values = c("#3B9AB2","#EBCC2A")) 
+
+```
+
+```{r Final Seagrass Plot}
+
+
+seagrass<-read.csv("Seagrass Stuff/Seagrass Data/Seagrass Data.csv")
+
+#there is a blank in 2015 Transect 11, quadrat 10, nothing is recorded for S. filliforme, we replaced it with a zero, likely non of this species observed in this quadrat
+seagrass[is.na(seagrass)] <- 0 
+
+#calculate the average percent cover of each seagrass for each transect
+avggrass<-seagrass%>%group_by(Year, Transect)%>%
+  summarise(Thalassia=mean(T.testudinum), 
+            Halophila=mean(Halophilastipulacae), 
+            Halodule=mean(H.wrightii), 
+            Syringodium=mean(S.filiforme))
+
+#make nMDS frame
+
+GnMDS<-avggrass%>%select(Thalassia,Halophila,Halodule,Syringodium)
+# r decided to keep year even though i said no so were removing it, jerk
+#I think this is because the dataframe is grouped, try and figure out how to ungroup it when I have internet
+
+GnMDS<-GnMDS[,-1]
+
+
+#now we run the nMDS, initally got an error too many zeros to use bray distance so we ran using euclidian
+grass_NMDS <- metaMDS(GnMDS, k = 2, trymax = 100, distance = "euclidian" ) 
+
+grass_NMDS
+
+#Stress:     0.06135058
+
+stressplot(grass_NMDS)
+#non metric fit r2=0.996, linear fit r2=0.987
+
+##Basic Plot
+plot(grass_NMDS)
+
+##pulling the species locations out of the NMDS (x and y)
+grass_loc <- as.data.frame(grass_NMDS$species)
+
+# this line is pulling the species names and linking them to thier location
+grass_loc$sp <- rownames(grass_NMDS$species)
+
+#this is pulling the points for each individual transect out of the nmds
+  trans_loc <- as.data.frame(grass_NMDS$points)
+  
+#we need a dataframe to pull the years from, so we can link them to transect locations 
+yearframe<-avggrass%>%select(Thalassia,Halophila,Halodule,Syringodium, Year)
+
+#we are pulling the year out of NMDS frame 1 that we made earlier so we can make the polygons for year, and color by year, this doesnt work for some reason 
+
+trans_loc$Year <- yearframe[,5]
+
+trans_loc%>%rename("Year"="Year$Year")
+
+#this is coloring the plot by year
+ ggplot(trans_loc) +
+  geom_text(data = grass_loc, aes(x = MDS1, y = MDS2, label = sp)) + geom_point(aes(x = MDS1, y = MDS2, color = as.factor(Year$Year)), size = 2) +
+  theme_classic() +
+  labs(color = "year$Year") +
+  guides(color = guide_legend(nrow = 1)) +
+  theme(panel.border = element_rect(fill = NA),
+        legend.position = "bottom")+
+  geom_label(aes(), x= 0.4 , y=0.8, label="stress=0.061")
+
+
+```
+
+```{r number of transects per year}
+
+seayear<-seagrass%>%group_by(Year)%>%
+  summarise(length(unique(Transect)))
+
+View(seayear)
+```
+

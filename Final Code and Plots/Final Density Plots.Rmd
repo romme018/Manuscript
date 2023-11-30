@@ -1,0 +1,268 @@
+---
+title: "Final Density Plots"
+author: "Kaitlin Rommelfanger"
+date: "2023-11-03"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r Boxplots y axes Different Scales}
+#libraries
+library(tidyverse)
+library(patchwork)
+#csvs needed
+#seagrass information
+grass<-read.csv("Data/WeFixedItAnalyzeMe.csv")
+#fish family information
+fish<-read.csv("AllMerged.csv")
+
+
+##Seagrass
+#adding a totalgrass column, sum of all grass present, and calculating the percent of present seagrass that is halophila 
+grass<-grass %>% 
+  mutate(totalgrass=(grass$PCovHalophila+
+                       grass$PCovThalassia+
+                       grass$PCovHalodule+
+                       grass$PCovSyringodium)) %>% 
+  mutate(PerHalTotal=(grass$PCovHalophila/
+                        totalgrass))
+
+#cannot divide by 0, when total cover is zero got nas, these we changed to zeros 
+grass[is.na(grass)]<-0
+
+##Make the depth bin categories##
+grass<- grass%>% 
+       mutate(dhcat = case_when((depth >= 15.0) ~ "deep",
+                                (depth <= 15.0 & PerHalTotal == 1.0) ~ "hal",
+                                (depth <= 15.0 & PerHalTotal < 1.0) ~ "native" ))
+
+
+#count of number of fish in each family on each transect, want tabular by transect, replaced NA with zeros
+
+fishdens<-fish%>%
+  group_by(Transect)%>%
+  count(Family)%>%
+  pivot_wider(names_from = Family, values_from = n)%>%
+  mutate_all(~replace(., is.na(.), 0))
+
+#selected the families contributing to 90% of the differences between all groups, then determined density of each family, by taking the total count of each family divided by 100 which is the area of the transects
+  fishdens<-fishdens%>%select(Transect, 
+                              Labridae, 
+                              Lutjanidae, 
+                              Gobiidae, 
+                              Serranidae, 
+                              Scaridae, 
+                              Labrisomidae, 
+                              Carangidae, 
+                              Pomacentridae, 
+                              Monacanthidae )%>%
+    mutate("Lab"=Labridae/100, 
+                                  "Lut"=Lutjanidae/100,
+                                  "Gob"=Gobiidae/100,
+                                  "Ser"=Serranidae/100,
+                                  "Scar"=Scaridae/100,
+                                  "Labm"=Labrisomidae/100,
+                                  "Car"=Carangidae/100,
+                                  "Pom"=Pomacentridae/100,
+                                  "Mon"=Monacanthidae/100)
+  
+
+
+#now merge the two dataframes, so we know the categories and the densities 
+
+  fgmerge<-merge(fishdens, grass[,c("Transect", "dhcat")], by="Transect")
+
+#select columns we want to plot the data, transect, all the densities and the category
+plotframe <- fgmerge%>%select(Transect, 
+                              Lab, 
+                              Lut, 
+                              Gob, 
+                              Ser, 
+                              Scar, 
+                              Labm, 
+                              Car, 
+                              Pom, 
+                              Mon, 
+                              dhcat)
+
+#now pivot dataframe longer, for plotting, and make the category a factor
+plotframe <- plotframe%>%
+  pivot_longer(cols = Lab:Mon,
+               names_to = "Family",
+               values_to = "density")%>%
+  mutate(dhcat = as.factor(dhcat))
+
+
+
+#get one boxplot working, look how we want it 
+
+Gob<-plotframe%>%
+    filter(Family=="Gob")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab(" ")+#no y axis lables
+  ggtitle("Gobiidae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n  Native Present"))+geom_text(aes(family="serif", fontface="plain"),x= "deep" , y=0.27, label="a")+#add first letter, family and fontface change font and remove bold
+  geom_text(aes(family="serif", fontface="plain"),x= "hal" , y=0.25, label="a")+#add second letter
+  geom_text(aes(family="serif", fontface="plain"), x= "native" , y=0.2, label="b")+#add third letter 
+  theme(legend.position="none")+#removes legend 
+    ylim(0,0.3)#manually set y axis 
+
+
+Gob
+
+#next plot Labridae
+
+Lab<-plotframe%>%
+    filter(Family=="Lab")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab("Density (fish/100m2)")+
+  ggtitle("Labridae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n Native Present"))+geom_text(aes(family="serif", fontface="plain"),x= "deep" , y=0.2, label="a")+#add first letter, family and fontface change font and remove bold
+  geom_text(aes(family="serif", fontface="plain"),x= "hal" , y=0.3, label="b")+#add second letter
+  geom_text(aes(family="serif", fontface="plain"), x= "native" , y=0.54, label="b")+#add third letter
+  theme(legend.position="none")+#removes legend 
+    ylim(0,0.55)#manually set y axis 
+  
+Lab
+#next plot Lutjanidae 
+
+Lut<-plotframe%>%
+    filter(Family=="Lut")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab(" ")+
+  ggtitle("Lutjanidae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & <100% Halophila"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n < 100% Halophila"))+geom_text(aes(family="serif", fontface="plain"),x= "deep" , y=0.4, label="a")+#add first letter, family and fontface change font and remove bold
+  geom_text(aes(family="serif", fontface="plain"),x= "hal" , y=0.2, label="b")+#add second letter
+  geom_text(aes(family="serif", fontface="plain"), x= "native" , y=0.2, label="b")+#add third letter
+  theme(legend.position="none")+#removes legend 
+    ylim(0,0.45)#manually set y axis 
+  
+Lut
+
+#next is Serranidae
+Ser<-plotframe%>%
+    filter(Family=="Ser")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab("Density (fish/100m2)")+
+  ggtitle("Serranidae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n  Native Present"))+geom_text(aes(family="serif", fontface="plain"),x= "deep" , y=0.19, label="a")+#add first letter, family and fontface change font and remove bold
+  geom_text(aes(family="serif", fontface="plain"),x= "hal" , y=0.125, label="b")+#add second letter
+  geom_text(aes(family="serif", fontface="plain"), x= "native" , y=0.125, label="b")+#add third letter 
+  theme(legend.position="none")+#removes legend 
+    ylim(0,0.25)#manually set y axis 
+Ser
+
+#Scaridae is next
+
+Scar<-plotframe%>%
+    filter(Family=="Scar")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab(" ")+#n y axis labels
+  ggtitle("Scaridae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & <100% Halophila"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n Native Present"))+theme(legend.position="none")+#removes legend 
+    ylim(0,0.175)#manually set y axis 
+
+Scar
+
+#Labrisomidae is next
+
+Labm<-plotframe%>%
+    filter(Family=="Labm")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab(" ")+#no y axis labels
+  ggtitle("Labrisomidae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & <100% Halophila"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n Native Present"))+geom_text(aes(family="serif", fontface="plain"),x= "deep" , y=0.09, label="a")+#add first letter, family and fontface change font and remove bold
+  geom_text(aes(family="serif", fontface="plain"),x= "hal" , y=0.075, label="ab")+#add second letter
+  geom_text(aes(family="serif", fontface="plain"), x= "native" , y=0.075, label="b")+#add third letter 
+  theme(legend.position="none")+#removes legend 
+    ylim(0,0.1)#manually set y axis 
+
+Labm
+
+#Car is next Carangidae
+Car<-plotframe%>%
+    filter(Family=="Car")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab("Density (fish/100m2)")+
+  ggtitle("Carangidae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n Native Present"))+
+  theme(legend.position="none")+#removes legend 
+    ylim(0,0.65)#manually set y axis 
+  
+Car
+
+#next is  Pomacentridae
+
+Pom<-plotframe%>%
+    filter(Family=="Pom")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab(" ")+#n y axis labels
+  ggtitle("Pomacentridae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n Native Present"))+theme(legend.position="none")+#removes legend 
+    ylim(0,0.12)#manually set y axis 
+  
+Pom
+
+#next is Monacanthidae
+
+Mon<-plotframe%>%
+    filter(Family=="Mon")%>%
+    ggplot(names=labels, aes(x=dhcat, y=density, fill=dhcat))+
+  geom_boxplot(outlier.shape=2)+#change the shape of outliers
+  geom_point(size=0.6)+#adds the points onto plot in single line
+  xlab(" ")+#no x axis labels 
+  ylab(" ")+#no y axis labels
+  ggtitle("Monacanthidae")+
+  theme(plot.title = element_text(hjust = 0.5))+#how to center the title
+  scale_fill_manual(name = "Category", labels = c(">15m", "< 15m & 100% Halophila","< 15m & Native Present"),values = c("#56B4E9","#F0E442","#CC79A7"))+#pick the colors
+  scale_x_discrete(labels=c(">15m", "< 15m & \n 100% Halophila","<15m & \n Native Present"))+
+    ylim(0,0.035)#manually set y axis 
+  
+Mon
+
+#patchwork help  https://gotellilab.github.io/GotelliLabMeetingHacks/NickGotelli/ggplotPatchwork.html
+DifferentScales<-Lab+Lut+Gob+Ser+Scar+Labm+Car+Pom+Mon+plot_layout(ncol=3)
+
+DifferentScales
+```

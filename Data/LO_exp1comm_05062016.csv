@@ -1,0 +1,36 @@
+Site,Date,Treatment,HaemulidaeTot,HolocentridaeTot,LutjanidaeTot,MullidaeTot,ScaridaeTot,SciaenidaeTot,Tot,Haemulidae,Holocentridae,Lutjanidae,Scaridae,Sciaenidae
+Frenchman,1,H. stipulacea,0,0,6,0,0,0,6,0,0,1,0,0
+Frenchman,2,H. stipulacea,2,0,2,0,0,0,4,0.5,0,0.5,0,0
+Frenchman,2,S. filiforme,0,0,1,0,0,0,1,0,0,1,0,0
+Frenchman,2,T. testudinum,0,0,1,0,0,0,1,0,0,1,0,0
+Frenchman,4,H. stipulacea,0,0,2,0,0,0,2,0,0,1,0,0
+Frenchman,4,S. filiforme,0,1,1,0,0,0,2,0,0.5,0.5,0,0
+Frenchman,5,H. stipulacea,0,1,1,0,0,0,2,0,0.5,0.5,0,0
+Frenchman,5,T. testudinum,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,1,H. stipulacea,0,0,4,0,0,0,4,0,0,1,0,0
+Lindbergh,1,S. filiforme,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,1,Sand,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,2,H. stipulacea,1,0,8,0,0,0,9,0.111111111,0,0.888888889,0,0
+Lindbergh,2,S. filiforme,0,0,2,0,0,0,2,0,0,1,0,0
+Lindbergh,2,T. testudinum,2,0,0,0,1,0,3,0.666666667,0,0,0.333333333,0
+Lindbergh,3,H. stipulacea,0,0,5,0,0,0,5,0,0,1,0,0
+Lindbergh,3,Sand,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,3,T. testudinum,0,0,1,0,1,1,3,0,0,0.333333333,0.333333333,0.333333333
+Lindbergh,4,H. stipulacea,0,0,6,0,0,0,6,0,0,1,0,0
+Lindbergh,4,S. filiforme,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,4,Sand,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,4,T. testudinum,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,5,H. stipulacea,0,0,3,0,0,0,3,0,0,1,0,0
+Lindbergh,5,S. filiforme,0,0,1,0,0,0,1,0,0,1,0,0
+Lindbergh,5,T. testudinum,0,0,0,0,1,0,1,0,0,0,1,0
+Sprat,1,S. filiforme,1,0,1,0,0,0,2,0.5,0,0.5,0,0
+Sprat,1,Sand,1,0,1,0,0,0,2,0.5,0,0.5,0,0
+Sprat,1,T. testudinum,1,1,0,0,0,0,2,0.5,0.5,0,0,0
+Sprat,2,T. testudinum,0,0,0,0,1,0,1,0,0,0,1,0
+Sprat,3,H. stipulacea,1,0,0,0,0,0,1,1,0,0,0,0
+Sprat,3,S. filiforme,2,0,0,0,0,0,2,1,0,0,0,0
+Sprat,4,H. stipulacea,0,0,1,0,0,0,1,0,0,1,0,0
+Sprat,4,T. testudinum,0,0,0,0,1,0,1,0,0,0,1,0
+Sprat,5,S. filiforme,2,0,0,0,0,0,2,1,0,0,0,0
+Sprat,5,Sand,3,0,0,0,0,0,3,1,0,0,0,0
+Sprat,5,T. testudinum,0,2,0,0,0,0,2,0,1,0,0,0

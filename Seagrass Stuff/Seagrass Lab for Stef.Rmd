@@ -1,0 +1,641 @@
+---
+title: "Seagrass lab"
+output: html_document
+date: "2022-11-05"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r Troubleshooting the percent cover stuff}
+setwd("~/Desktop/Physical Ecological Processes /Seagrass Lab ")
+Seagrass <- read.csv("data/Seagrass Data.csv", header=TRUE)
+Conch <- read.csv("data/Conch Data.csv", header=TRUE)
+View(Conch)
+library(tidyr)
+#below code deleted the NAs from the bottom of the conch data (didnt need to do this after I reloaded the data)
+
+Conch<-Conch %>% drop_na()
+
+#then view the data
+View(Conch)
+View(Seagrass)
+
+#having issues so trying to melt the data
+library(reshape2)
+Sgmelt <- melt(Seagrass, id.vars = "Quadrat", variable.name = "Species", value.name = "PercentCover")
+View(Sgmelt)
+#deleted all the extra colums that got added when imported to r 
+
+Seagrass$X<-NULL
+
+
+#deleted these two rows from 2019 that no data was collected (we did not need to do this)
+Seagrass<- Seagrass[-c(880, 881), ]
+colnames(Seagrass)[11]<-c("PercentCover")
+
+#how to pivot table in r, turn on tidyverse 
+install.packages("tidyverse")
+library("tidyverse")
+
+#so before the arrow is the new name of the object you are calling, then to do pivot table in r you tell it the dataframe then do a pipe (which is %>%)
+
+#so this is a pivot table that shows the mean total percent cover per transect per year
+seagrassmeanstransect<-Seagrass %>% 
+  group_by(Year,Transect) %>% 
+  summarise(meanpercentseagrass=mean(PecentSeagrassCover))
+
+View(seagrassmeanstransect)
+
+# this is me testing if I could get it to tell me the mean percent cover of T testudium per year and transect and that worked
+
+TTmeanTYr<-Seagrass %>% 
+  group_by(Year,Transect) %>% 
+  summarise(meanTT=mean(T.testudinum))
+
+View(TTmeanTYr)
+
+#Then I tried to get it only by year and that worked!!!
+TTmeanYr<-Seagrass %>% 
+  group_by(Year) %>% 
+  summarise(meanTT=mean(T.testudinum))
+
+View(TTmeanYr)
+
+# then I tried doing two species and that worked!!
+TTHWmeanYr<-Seagrass %>% 
+  group_by(Year) %>% 
+  summarise(meanTT=mean(T.testudinum),meanHW=mean(H.wrightii))
+
+View(TTHWmeanYr)
+
+#then i did all the species, but SF did not work, but it didnt actually work, because I had the code in using the Seagrass$ method, it does not like that because i used pipe to already tell it the dataframe so once i deleted the $ it appeared to work
+
+SpmeanYr<-Seagrass %>% 
+  group_by(Year) %>% 
+  summarise(meanTT=mean(T.testudinum),meanHW=mean(H.wrightii), meanSF=mean(S.filiforme), meanHS=mean(Halophilastipulacae))
+
+View(SpmeanYr)
+
+
+            
+#Averycode she summarized all the data by year, by species
+
+library(plyr)
+SF.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(S.filiforme),
+                      sd = sd(S.filiforme),
+                      n = length(S.filiforme),
+                      SEM = sd(S.filiforme)/sqrt(length(S.filiforme)))
+SF.summary
+
+TT.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(T.testudinum),
+                      sd = sd(T.testudinum),
+                      n = length(T.testudinum),
+                      SEM = sd(T.testudinum)/sqrt(length(T.testudinum)))
+
+TT.summary
+
+HW.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(H.wrightii),
+                      sd = sd(H.wrightii),
+                      n = length(H.wrightii),
+                      SEM = sd(H.wrightii)/sqrt(length(H.wrightii)))
+
+HW.summary
+
+HS.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(Halophilastipulacae),
+                      sd = sd(Halophilastipulacae),
+                      n = length(Halophilastipulacae),
+                      SEM = sd(Halophilastipulacae)/sqrt(length(Halophilastipulacae)))
+
+HS.summary
+
+Totalcover.summary<- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(PecentSeagrassCover),
+                      sd = sd(PecentSeagrassCover),
+                      n = length(PecentSeagrassCover),
+                      SEM = sd(PecentSeagrassCover)/sqrt(length(PecentSeagrassCover)))
+Totalcover.summary
+
+# then we are creating a vector for each of the means from the summaries so we can combine them into a dataframe 
+
+S.filiforme<-c(SF.summary$mean)
+S.filiforme
+
+T.testudinium<-c(TT.summary$mean)
+T.testudinium
+
+H.stipulacae<-c(HS.summary$mean)
+H.stipulacae
+
+H.wrighti<-c(HW.summary$mean)
+H.wrighti
+
+year<-(2009:2022)
+year
+
+
+#then we want to combine the vectors into a single dataframe
+
+sgmean<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae)
+View(sgmean)
+
+#now we gotta graph this.. 
+
+#to graph it we need to melt it, we want it to look like Y, S, M as top of columns, so to do that we melted it, (this works both using the matrix we made from the summaries and the data from the pivot table)
+
+library(reshape2)
+SGmelt = melt(sgmean, id.vars = c("year"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae"))
+
+View(SGmelt)
+
+#renamed the colum name in the melted document to species
+colnames(SGmelt)[2]<-c("Species")
+
+#then we put it into ggplot, this current code does not have the error bars
+library(ggplot2)
+
+species_plot <- ggplot(SGmelt, aes(fill=Species, y=value, x=year)) +
+    geom_bar(position="stack", stat="identity") +ylab("Percent Seagrass Cover by Species (+/-SEM") + xlab("Year")
+
+species_plot
+
+
+
+#trying to add error bars to the plot
+
+#created a vector, with the standard errors of them mean pulled from the total cover summary that we made(because tyler said that we want the error bars just from there)
+Totalcover.summary
+
+SEM<-c(Totalcover.summary$SEM)
+
+#then I added the SEM to the matrix we created earlier
+
+sgmeanSEM<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae, SEM)
+View(sgmeanSEM)
+
+#then we melted it so that SEM was repeated per year, to try and get the error bars into the graph then we quit for the day
+
+library(reshape2)
+SGmeltSEM = melt(sgmeanSEM, id.vars = c("year", "SEM"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae"))
+
+View(SGmeltSEM)
+
+```
+
+
+
+```{r Lets Try Again}
+setwd("~/Desktop/Physical Ecological Processes /Seagrass Lab ")
+Seagrass <- read.csv("data/Seagrass Data.csv", header=TRUE)
+Conch <- read.csv("data/Conch Data.csv", header=TRUE)
+View(Conch)
+View(Seagrass)
+
+#Summarize all the species, to get the means from each species
+library(plyr)
+SF.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(S.filiforme),
+                      sd = sd(S.filiforme),
+                      n = length(S.filiforme),
+                      SEM = sd(S.filiforme)/sqrt(length(S.filiforme)))
+SF.summary
+
+TT.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(T.testudinum),
+                      sd = sd(T.testudinum),
+                      n = length(T.testudinum),
+                      SEM = sd(T.testudinum)/sqrt(length(T.testudinum)))
+
+TT.summary
+
+HW.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(H.wrightii),
+                      sd = sd(H.wrightii),
+                      n = length(H.wrightii),
+                      SEM = sd(H.wrightii)/sqrt(length(H.wrightii)))
+
+HW.summary
+
+HS.summary <- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(Halophilastipulacae),
+                      sd = sd(Halophilastipulacae),
+                      n = length(Halophilastipulacae),
+                      SEM = sd(Halophilastipulacae)/sqrt(length(Halophilastipulacae)))
+
+HS.summary
+
+Totalcover.summary<- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(PecentSeagrassCover),
+                      sd = sd(PecentSeagrassCover),
+                      n = length(PecentSeagrassCover),
+                      SEM = sd(PecentSeagrassCover)/sqrt(length(PecentSeagrassCover)))
+Totalcover.summary
+
+#make Vectors, S. filiforme is fucked up so we had to enter those averages manually, but this didnt work either... so fuck that
+S.filiforme<-c(27.3, 2.214285714, 0.715384615, 3.777777778, 6.606666667, 8.416666667, 6.764705882, 1.76, 0.04494382, 0.433333333, 0.352272727, 0.155555556, 2.5, 1.058823529)
+S.filiforme
+
+T.testudinium<-c(TT.summary$mean)
+T.testudinium
+
+H.stipulacae<-c(HS.summary$mean)
+H.stipulacae
+
+H.wrighti<-c(HW.summary$mean)
+H.wrighti
+
+year<-(2009:2022)
+year
+
+#then we want to combine the vectors into a single dataframe
+
+sgmean<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae)
+View(sgmean)
+
+#then we melted it (when i melt the data here, 2015 disappears wtf!!!!!!, except when we reran the code it worked so idk)
+
+library(reshape2)
+SGmelt = melt(sgmean, id.vars = c("year"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae"))
+
+View(SGmelt)
+
+#renamed the colum name in the melted document to species
+colnames(SGmelt)[2]<-c("Species")
+
+#then we put it into ggplot, this current code does not have the error bars
+library(ggplot2)
+
+species_plot <- ggplot(SGmelt, aes(fill=Species, y=value, x=year)) +
+    geom_bar(position="stack", stat="identity") +ylab("Percent Seagrass Cover by Species (+/-SEM)") + xlab("Year")
+
+species_plot
+
+
+#add SEM to sgmean data to try and get error bars, this is not workingggg (we used the avery code below)
+Totalcover.summary<- ddply(Seagrass, ~Year, summarise,
+                      mean = mean(PecentSeagrassCover),
+                      sd = sd(PecentSeagrassCover),
+                      n = length(PecentSeagrassCover),
+                      SEM = sd(PecentSeagrassCover)/sqrt(length(PecentSeagrassCover)))
+Totalcover.summary
+
+SEM<-c(0, 2.289747994, 0.752349042, 2.090340691, 2.890588862, 9.676636199, 10.40547578, 9.328684448, 5.664863493, 12.92283738, 10.03800973, 10.24014333, 6.631936049, 7.997817261)
+SEM
+
+sgmeanSEM<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae, SEM)
+View(sgmeanSEM)
+
+library(reshape2)
+SGmeltSEM = melt(sgmeanSEM, id.vars = c("year"),
+                measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme","H.stipulacae","SEM"))
+
+SGmeltSEM
+
+
+species_plotSEM <- ggplot(SGmeltSEM, aes(fill=Species, y=value, x=year)) +
+    geom_bar(position="stack", stat="identity") +ylab("Percent Seagrass Cover by Species (+/-SEM)") + xlab("Year") + geom_errorbar( aes(ymin = value-"SEM", ymax = value +"SEM") data = SGmeltSEM, width = 0.2) 
+                 
+species_plotSEM
+
+
+#gonna try melting the data the way that Avery did got those error bars to work yayyayayay!!!!!!
+
+mean<-c(Totalcover.summary$mean)
+averydataframe<-data.frame(year,T.testudinium, H.wrighti, S.filiforme, H.stipulacae, SEM, mean)
+
+averydataframe
+
+AverySGmeltSEM = melt(averydataframe,id.vars = c("year","SEM","mean"), measure.vars = c("T.testudinium", "H.wrighti", "S.filiforme", "H.stipulacae"))
+
+AverySGmeltSEM
+
+colnames(AverySGmeltSEM)[4]<-c("Species")
+
+library(rlang)
+percentcoverplot<-ggplot(aes(fill=Species, y=value, x=year), data = AverySGmeltSEM) + geom_bar(position="stack", stat="identity") + geom_errorbar(aes(ymin = mean - SEM, ymax = mean + SEM), width = 0.5) + ggtitle("Percentage of Species Cover Over the Years") + ylab("Percent Seagrass Cover by Species (+/-SEM of Total Coverage)") + xlab("Year")
+
+percentcoverplot
+
+##NOW we are creating a 95% confidence interval for the mean from 2010
+
+
+#melting to get the percent seagrass cover per year at each quadrat
+melt.PSGYear <- melt(Seagrass, id.vars ="Year", measure.vars = "PecentSeagrassCover")
+View(melt.PSGYear)
+#this takes it down to only having the data for 2010
+ci.2010 <- melt.PSGYear[11:80,]
+View(melt.2010)
+#now we are condensing the data to make it into a confidence interval
+model <- lm(value ~ 1, ci.2010)
+confint(model, level=0.95)
+
+#our confidence interval is 
+#0.7840676-3.673075
+
+#now we are finding the average for 2009
+
+melt.2009 <- melt.PSGYear[1:10,]  
+melt.2009
+
+mean2009 <- mean(melt.2009$value)
+mean2009
+
+#average for 2009 is 28.7, which is outside the confidence interval for 2010
+
+
+
+#One Way Anova (Nonparametric) Comparing the Means of the Percent Seagrass Cover 
+
+View(melt.PSGYear)
+melted.huricane <- melt.PSGYear[11:1275,]
+View(melted.huricane)
+#summarized the data to get the means for the years for the plot
+hurricane.summary<- ddply(melted.huricane, ~Year, summarise,
+                      mean = mean(value),
+                      sd = sd(value),
+                      n = length(value),
+                      SEM = sd(value)/sqrt(length(value)))
+View(hurricane.summary)
+#melting the data for things
+
+library(dplyr)
+hurricane.stuff <- group_by(melted.huricane, Year) %>%
+  dplyr::summarise( count = n(),
+             mean = mean(value, na.rm = TRUE),
+             sd = sd(value, na.rm = TRUE),
+             median = median(value, na.rm = TRUE),
+             IQR = IQR(value, na.rm = TRUE))
+hurricane.stuff
+
+library(ggpubr)
+#this code makes a really pretty rainbow boxplot
+ggboxplot(melted.huricane, x = "Year", y = "value", color = "Year",
+          order = c("2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"),
+          ylab = "Mean Seagrass Cover (%)", xlab = "Year")
+
+
+#this is the actual anova, we are running nonparametric(first attempt...)we ended up rerunning the anova below, because this is by quadrat and we wanted it by transect
+
+KWPercentCover<-kruskal.test(value ~ Year, data = melted.huricane)
+KWPercentCover
+#p < 2.2e-16
+#there is a significant difference in seagrass coverage between 2010 to 2022
+#pos hoc: should it be this test? Tukey?
+
+pairwise.wilcox.test(melted.huricane$value, melted.huricane$Year,
+                 p.adjust.method = "BH")
+
+library(agricolae)
+Tukey <- HSD.test(KWPercentCover, "Year")
+
+
+dunn_test(melted.huricane,value~Year, p.adjust.method = "BH", detailed=FALSE)
+
+```
+
+```{r Percent Cover ANOVA, post hoc}
+#trying the ANOVA again, this time we averaged by year and transect so we got the average per transect transect is the level of replication
+AnovaSeagrass<-Seagrass%>%
+  group_by(Year,Transect)%>%
+  summarise(meanpertransect=mean(PecentSeagrassCover))
+
+#this is looking at the data in a rainbow boxplot
+
+boxplotAnovaMeanPerTransect<-ggboxplot(AnovaSeagrass, x = "Year", y = "meanpertransect", color = "Year",
+          order = c("2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"),
+          ylab = "Mean Seagrass Cover (%)", xlab = "Year") 
+
+boxplotAnovaMeanPerTransect
+
+#this is testing the assumptions
+View(AnovaSeagrass)
+percentcoverANOVA<-aov(Transect~Year,AnovaSeagrass)
+percentcoverresiduals<-residuals(percentcoverANOVA)
+hist(percentcoverresiduals)
+shapiro.test(percentcoverresiduals)
+#not normally distributed residuals p=0.00399
+
+#trying to transform the data here
+AnovaSeagrass$meancover.asin <- asin(AnovaSeagrass$meanpertransect)
+#couldnt get the logit transformation to work so I gave up
+library(cars)
+AnovaSeagrass$meancover.logit <- logit(AnovaSeagrass$meanpertransect)
+
+#transformations dont work!
+
+#rerunning the ANOVA on data summarized average per transect, instead of by quadrat
+
+#need to delete 2009 from the dataframe, this works
+AnovaSeagrass=AnovaSeagrass[-(1),]
+
+#now running the ANOVA
+
+KWPercentCoverTransect<-kruskal.test(meanpertransect ~ Year, data = AnovaSeagrass)
+KWPercentCoverTransect
+
+#p value is 7.98e-14
+
+#now to run the post hoc analysis to see where our differences lie
+install.packages("FSA")
+library(FSA)
+
+dunnTest(meanpertransect ~ Year, data=AnovaSeagrass)
+
+#2011->2015, 2016, 2018, 2019,2020, 2021, 2022
+#2010-> 2016, 2020, 2021
+#2012-> 2016, 2020, 2021
+#2013-> 2016,2021
+#2016-> 2017
+#2017-> 2020, 2021
+
+
+#this is us rerunning a different way to run the post hoc, and it spits out the letters!!!!
+library(agricolae)
+kruskal(AnovaSeagrass$meanpertransect, AnovaSeagrass$Year, group=TRUE, p.adj="bonferroni")$groups
+
+#then we put all the letters in order for the bars
+sigs<-c("NA", "de", "e", "de", "de", "cd", "bc", "ab", "de", "abc", "abc", "abc", "a", "abc")
+
+#cant figure out how to add the sigs, so we give up were just gonna add them manually
+
+```
+
+
+```{r Shoot Density}
+
+#loading the data, Avery reworked it so that we had shoots of native and shoots of invasive
+shootdata <- read_csv("data/shoot.csv")
+View(shootdata)
+
+
+shoot.2010 <- shootdata[11:80,]
+shoot.model <- lm(NumShoots ~ 1, shoot.2010)
+confint(shoot.model, level=0.95)
+
+#confidence interval is 1.005285 to 6.194715
+
+mean.2009 <- shootdata[1:10,]  
+mean.2009
+mean2009 <- mean(mean.2009$NumShoots)
+mean2009
+#mean for 2009 is 28.4 shoots, mean is outside the confidence interval 
+as.factor(shootdata$Year)
+
+ShootDensity<-shootdata%>%
+  group_by(Year,Transect)%>%
+  summarise(meandensitytransect=mean(NumShoots))
+
+View(ShootDensity)
+ShootDensity=ShootDensity[-(1),]
+
+#graph the data, summarize the data 
+
+shoot.summary <- ddply(shootdata, ~Year, summarise,
+                       mean = mean(NumShoots),
+                       sd = sd(NumShoots),
+                       n = length(NumShoots),
+                       SEM = sd(NumShoots)/sqrt(length(NumShoots)))
+
+shoot.summary
+
+#make a ggplot
+
+DensityPlot<-ggplot(aes(x=Year, y=mean), data = shoot.summary) +
+  geom_bar(stat="identity", fill="orange") +
+  geom_errorbar(aes(ymin=mean-SEM, ymax = mean+SEM), width = .25)+
+  ggtitle("Brewers Bay Average Shoot Density")+
+  ylab("Mean Shoot Density Per Transect (50m^2) +/- SEM")+
+  xlab("Year")
+
+#running the ANOVA
+
+KWDensity<-kruskal.test(meandensitytransect ~ Year, data = ShootDensity)
+KWDensity
+#p=4.739e-10, chi-squared=69.09, df=12
+
+#running sabrinas ANOVA, we got different answers, i dont know why but were going with the first one 
+
+shootdata=shootdata[-c(1,2,3,4,5,6,7,8,9,10),]
+
+kruskal.test(NumShoots ~ Year, data = shootdata)
+
+#now we are running a post hoc
+kruskal(ShootDensity$meandensitytransect, ShootDensity$Year, group=TRUE, p.adj="bonferroni")$groups
+
+densigs<-c(" ","de", "e", "abcd", "abc", "abc","abc", "a", "cde", "bcd", "ab", "bcde", "ab", "cde" )
+
+shoot.summary$sigs<-densigs
+shoot.summary
+
+DensityPlot + 
+  geom_text(aes(x = year, y = mean+SEM + 1.5), data = shoot.summary, label = densigs, colour = "black") +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+
+```
+
+```{rLenght}
+lengthdata <- read_csv("data/Length.csv")
+View(lengthdata)
+
+
+length.2010 <- lengthdata[11:80,]
+length.model <- lm(TotalHeight.mm. ~ 1, length.2010)
+confint(length.model, level=0.95)
+
+#confidence interval is 7.761102 to 18.75318
+
+mean.2009 <- lengthdata[1:10,]  
+mean.2009
+mean2009 <- mean(mean.2009$TotalHeight.mm.)
+mean2009
+#mean for 2009 is 56mm, mean is outside the confidence interval 
+
+length.summary <- ddply(lengthdata, ~Year, summarise,
+                       mean = mean(TotalHeight.mm.),
+                       sd = sd(TotalHeight.mm.),
+                       n = length(TotalHeight.mm.),
+                       SEM = sd(TotalHeight.mm.)/sqrt(length(TotalHeight.mm.)))
+
+length.summary
+
+#make a ggplot
+
+LengthPlot<-ggplot(aes(x=Year, y=mean), data = length.summary) +
+  geom_bar(stat="identity", fill="pink") +
+  geom_errorbar(aes(ymin=mean-SEM, ymax = mean+SEM), width = .25)+
+  ggtitle("Brewers Bay Average Shoot Length")+
+  ylab("Mean Shoot Length (mm) Per Transect +/- SEM")+
+  xlab("Year")
+
+LengthPlot
+
+Length<-lengthdata%>%
+  group_by(Year,Transect)%>%
+  summarise(meanlength=mean(TotalHeight.mm.))
+
+View(Length)
+Length=Length[-(1),]
+
+KWLength<-kruskal.test(meanlength ~ Year, data = Length)
+KWLength
+
+#chi-squared = 74.49, df = 12, p-value = 4.587e-11
+
+kruskal(Length$meanlength, Length$Year, group=TRUE, p.adj="bonferroni")$groups
+
+lengthsig<-c(" ", "c", "c", "ab", "a", "ab", "ab", "ab", "c", "bc", "ab", "bc", "ab", "b")
+
+LengthPlot + 
+  geom_text(aes(x = year, y = mean+SEM + 3), data = length.summary, label = lengthsig, colour = "black") +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+```
+
+
+```{r Mean Conch Per Year}
+#conch mean per year
+
+View(Conch)
+conchdensity<-Conch %>% 
+  group_by(Year) %>% 
+  summarise(meandensity=mean(Number.Conch),SEM=(sd(Number.Conch)/sqrt(length(Number.Conch))))
+
+conchdensity
+
+conch.plot <- ggplot(conchdensity) +
+    geom_bar( aes(x=Year, y=meandensity), stat="identity", fill="orange", alpha=0.7) +
+    geom_errorbar( aes(x=Year, ymin=meandensity-SEM, ymax=meandensity+SEM), width=1) +
+  ggtitle("Average Conch Abundance") + ylab("Mean Conch Density per Transect (50m^2) +/-SEM") + xlab("Year")+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+conch.plot
+```
+
+
+
+
+
+```{r Density}
+
+View(Seagrass)
+seagrassdensity<-Seagrass %>% 
+  group_by(Year) %>% 
+ summarise(meandensitynumshoots=mean(NumberShoots),SEM=(sd(NumberShoots)/sqrt(length(NumberShoots))),meandensityHS=mean(NumberShootsH.stipulacae),SEMHS=(sd(NumberShootsH.stipulacae)/sqrt(length(NumberShootsH.stipulacae))) )
+
+View(seagrassdensity)
+
+density.plot <- ggplot(conchdensity) +
+    geom_bar( aes(x=Year, y=meandensity), stat="identity", fill="orange", alpha=0.7) +
+    geom_errorbar( aes(x=Year, ymin=meandensity-SEM, ymax=meandensity+SEM), width=1) +
+  ggtitle("Average Conch Abundance") + ylab("Avg Conch Density per Year (Number Conch/50m^2 +/-SEM)") + xlab("Year")
+
+```
